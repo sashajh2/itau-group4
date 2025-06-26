@@ -1,0 +1,1 @@
+#  Uses embeddings to classify the type of attack (e.g., face swap, voice clone).

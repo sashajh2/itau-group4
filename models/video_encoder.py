@@ -1,0 +1,1 @@
+# Encodes video or frame-level visual features (e.g., MARLIN) into embeddings.

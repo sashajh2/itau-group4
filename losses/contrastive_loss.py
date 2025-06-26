@@ -1,0 +1,1 @@
+#  Implements contrastive losses like InfoNCE, NT-Xent, or cosine similarity loss.
