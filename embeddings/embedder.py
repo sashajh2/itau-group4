@@ -30,13 +30,13 @@ class Embedder:
                     from moviepy.editor import VideoFileClip  # type: ignore
                     video = VideoFileClip(row['video_path']).subclip(row['segment_start'], row['segment_end'])
                     emb = embedding_fn(video)
-                    label = 1 if row.get('video_label', '') == 'fake' else 0
+                    label = 0 if row.get('video_label', '') == 'fake' else 1
                 elif mode == 'audio':
                     from moviepy.editor import VideoFileClip  # type: ignore
                     video = VideoFileClip(row['video_path']).subclip(row['segment_start'], row['segment_end'])
                     audio = video.audio
                     emb = embedding_fn(audio)
-                    label = 1 if row.get('audio_label', '') == 'fake' else 0
+                    label = 0 if row.get('audio_label', '') == 'fake' else 1
                 elif mode == 'forensic':
                     # Forensic mode: user should define what to pass to embedding_fn
                     emb = embedding_fn(row)
