@@ -12,6 +12,7 @@ class Embedder:
         """
         Placeholder for model loading logic. Should be overridden by subclasses.
         """
+        ### maybe move this to the subclass?
         return None
 
     def embed_dataset(self, df: pd.DataFrame, embedding_fn: Callable, mode: str = 'audio') -> pd.DataFrame:
@@ -26,7 +27,7 @@ class Embedder:
         results = []
         for i, row in df.iterrows():
             try:
-                if mode == 'video':
+                if mode == 'video' or mode == 'forensic':
                     from moviepy.editor import VideoFileClip  # type: ignore
                     video = VideoFileClip(row['video_path']).subclip(row['segment_start'], row['segment_end'])
                     emb = embedding_fn(video)
@@ -37,10 +38,6 @@ class Embedder:
                     audio = video.audio
                     emb = embedding_fn(audio)
                     label = 0 if row.get('audio_label', '') == 'fake' else 1
-                elif mode == 'forensic':
-                    # Forensic mode: user should define what to pass to embedding_fn
-                    emb = embedding_fn(row)
-                    label = row.get('label', 0)
                 else:
                     raise ValueError("Mode must be 'video', 'audio', or 'forensic'.")
                 results.append({'embedding': emb, 'label': label})
