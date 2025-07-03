@@ -2,8 +2,6 @@ import argparse
 from audio_embedder import AudioEmbedder
 from video_embedder import VideoEmbedder
 from forensic_embedder import ForensicEmbedder
-from faiss_indexer import FaissIndexer
-# from data.loaders.audio_loader import get_audio_loader  # Uncomment and implement this
 import os
 import pandas as pd  # type: ignore
 import numpy as np  # type: ignore
@@ -17,7 +15,6 @@ def main():
     parser.add_argument('--dataset_filepath', type=str, required=True, help='Path to dataset DataFrame (e.g., .pkl)')
     parser.add_argument('--out_dir', type=str, required=True, help='Output directory for embeddings and index')
     parser.add_argument('--device', type=str, default='cpu', help='Device to use (cpu or cuda)')
-    # parser.add_argument('--faiss', action='store_true', help='Whether to build a FAISS index')
     parser.add_argument('--mode', type=str, required=True, choices=['audio', 'video', 'forensic'], help='Embedding mode: audio, video, or forensic')
     args = parser.parse_args()
 
@@ -54,12 +51,6 @@ def main():
     with open(f"{args.out_dir}/metadata.pkl", "wb") as f:
         pickle.dump(metadata, f)
     print(f"Saved metadata for {len(metadata)} samples, aligned with embeddings.")
-
-    if args.faiss:
-        indexer = FaissIndexer(dim=embeddings.shape[1])
-        indexer.build_index(embeddings)
-        indexer.save_index(os.path.join(args.out_dir, 'index.faiss'))
-        print(f"FAISS index saved to {os.path.join(args.out_dir, 'index.faiss')}")
 
     print(f"Embeddings, labels, and metadata saved to {args.out_dir}")
 

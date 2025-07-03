@@ -7,7 +7,6 @@ from typing import List, Dict, Any, Optional
 import os
 import argparse
 import pickle
-from faiss_indexer import FaissIndexer
 
 def evaluate_model(
     y_true: np.ndarray,
@@ -150,8 +149,7 @@ def k_fold_linear_probe(
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate embeddings with stratified metrics.")
-    parser.add_argument('--embeddings', type=str, required=False, help='Path to embeddings.npy (used if --faiss_index not provided)')
-    parser.add_argument('--faiss_index', type=str, default=None, help='Path to FAISS index file (optional)')
+    parser.add_argument('--embeddings', type=str, required=True, help='Path to embeddings.npy')
     parser.add_argument('--labels', type=str, required=True, help='Path to labels.pkl')
     parser.add_argument('--metadata', type=str, default=None, help='Path to metadata.pkl')
     parser.add_argument('--stratify_by', type=str, nargs='*', default=None, help='Metadata fields to stratify by')
@@ -160,18 +158,8 @@ def main():
     parser.add_argument('--folds', type=int, default=5, help='Number of cross-validation folds')
     args = parser.parse_args()
 
-    # Load embeddings from FAISS index if provided, else from .npy
-    if args.faiss_index:
-        # Load the FAISS index and extract all embeddings
-        # Note: FAISS index does not store the original vectors, so you must have the .npy as well
-        print(f"Loading embeddings from FAISS index: {args.faiss_index}")
-        # For now, require the .npy file to be present for evaluation
-        if not args.embeddings:
-            raise ValueError("When using --faiss_index, you must also provide --embeddings (original vectors)")
-        embeddings = np.load(args.embeddings)
-    else:
-        print(f"Loading embeddings from .npy file: {args.embeddings}")
-        embeddings = np.load(args.embeddings)
+    print(f"Loading embeddings from .npy file: {args.embeddings}")
+    embeddings = np.load(args.embeddings)
 
     with open(args.labels, 'rb') as f:
         labels = pickle.load(f)
