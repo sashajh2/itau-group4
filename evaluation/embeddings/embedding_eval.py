@@ -152,7 +152,7 @@ def k_fold_linear_probe(
         clf = LogisticRegression(max_iter=1000, class_weight="balanced")
         clf.fit(X_train, y_train)
         y_probs = clf.predict_proba(X_test)[:, 1]
-        meta_test = metadata.iloc[test_idx] if metadata is not None else None
+        meta_test = metadata.iloc[test_idx].reset_index(drop=True) if metadata is not None else None
         eval_results = evaluate_model(
             y_test,
             y_probs,
