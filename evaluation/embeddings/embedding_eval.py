@@ -139,24 +139,6 @@ def _evaluate_metrics(y_true, y_probs, display_title=None) -> Dict[str, Any]:
     return results
 
 
-def load_metadata_from_json_paths(
-    json_paths: List[str], fields: Optional[List[str]] = None
-) -> List[Dict[str, Any]]:
-    metadata = []
-    for path in json_paths:
-        if not os.path.exists(path):
-            metadata.append({})
-            continue
-        with open(path, "r") as f:
-            data = json.load(f)
-        if fields is not None:
-            filtered = {k: data.get(k, None) for k in fields}
-            metadata.append(filtered)
-        else:
-            metadata.append(data)
-    return metadata
-
-
 def k_fold_linear_probe(
     embeddings, labels, metadata=None, stratify_by=None, folds=5, random_state=42
 ):
