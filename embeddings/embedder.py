@@ -1,8 +1,14 @@
 import pandas as pd  # type: ignore
 from typing import Callable, Any, Optional
 
+
 class Embedder:
-    def __init__(self, model_name: str, checkpoint_path: Optional[str] = None, device: str = 'cpu'):
+    def __init__(
+        self,
+        model_name: str,
+        checkpoint_path: Optional[str] = None,
+        device: str = "cpu",
+    ):
         self.model_name = model_name
         self.checkpoint_path = checkpoint_path
         self.device = device
@@ -15,7 +21,9 @@ class Embedder:
         ### maybe move this to the subclass?
         return None
 
-    def embed_dataset(self, df: pd.DataFrame, embedding_fn: Callable, mode: str = 'audio') -> pd.DataFrame:
+    def embed_dataset(
+        self, df: pd.DataFrame, embedding_fn: Callable, mode: str = "audio"
+    ) -> pd.DataFrame:
         """
         Args:
             df (pd.DataFrame): DataFrame with relevant columns for the mode.
@@ -27,21 +35,27 @@ class Embedder:
         results = []
         for i, row in df.iterrows():
             try:
-                if mode == 'video' or mode == 'forensic':
+                if mode == "video" or mode == "forensic":
                     from moviepy.editor import VideoFileClip  # type: ignore
-                    video = VideoFileClip(row['video_path']).subclip(row['segment_start'], row['segment_end'])
+
+                    video = VideoFileClip(row["video_path"]).subclip(
+                        row["segment_start"], row["segment_end"]
+                    )
                     emb = embedding_fn(video)
-                    label = 0 if row.get('video_label', '') == 'fake' else 1
-                elif mode == 'audio':
+                    label = 0 if row.get("video_label", "") == "fake" else 1
+                elif mode == "audio":
                     from moviepy.editor import VideoFileClip  # type: ignore
-                    video = VideoFileClip(row['video_path']).subclip(row['segment_start'], row['segment_end'])
+
+                    video = VideoFileClip(row["video_path"]).subclip(
+                        row["segment_start"], row["segment_end"]
+                    )
                     audio = video.audio
                     emb = embedding_fn(audio)
-                    label = 0 if row.get('audio_label', '') == 'fake' else 1
+                    label = 0 if row.get("audio_label", "") == "fake" else 1
                 else:
                     raise ValueError("Mode must be 'video', 'audio', or 'forensic'.")
-                results.append({'embedding': emb, 'label': label})
+                results.append({"embedding": emb, "label": label})
             except Exception as e:
                 print(f"Skipping row {i} due to error: {e}")
                 continue
-        return pd.DataFrame(results) 
+        return pd.DataFrame(results)
