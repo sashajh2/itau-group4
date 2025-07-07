@@ -107,7 +107,7 @@ def _evaluate_metrics(y_true, y_probs, display_title=None) -> Dict[str, Any]:
             f"FPR > 1% at all thresholds — fallback used with FPR={fallback['fpr']:.3f}"
         )
     results["best_thresh_fpr"] = best_thresh_fpr
-    results["fnr_at_1%fpr"] = best_fnr
+    results["fnr_at_1pfpr"] = best_fnr
     if best_cm_fpr is not None:
         ConfusionMatrixDisplay(best_cm_fpr, display_labels=["Real", "Fake"]).plot(
             cmap="Blues"
@@ -194,11 +194,11 @@ def main():
         "--metadata", type=str, default=None, help="Path to metadata.pkl"
     )
     parser.add_argument(
-        "--stratify_by",
+        "--stratify_mode",
         type=str,
-        nargs="*",
+        choices=["audio", "video", None],
         default=None,
-        help="Metadata fields to stratify by",
+        help="Stratification mode: 'audio' or 'video' (uses perturbation columns)",
     )
     parser.add_argument(
         "--output",
@@ -225,12 +225,19 @@ def main():
     if args.metadata:
         with open(args.metadata, "rb") as f:
             metadata = pickle.load(f)
+
+    # Determine stratification columns
+    stratify_by = None
+    if args.stratify_mode:
+        stratify_by = perturbation_lists[args.stratify_mode]
+        print(f"Stratifying by {args.stratify_mode} perturbation columns: {stratify_by}")
+
     if args.probe_type == "linear":
         results = k_fold_linear_probe(
             embeddings,
             labels,
             metadata=metadata,
-            stratify_by=args.stratify_by,
+            stratify_by=stratify_by,
             folds=args.folds,
         )
     else:
