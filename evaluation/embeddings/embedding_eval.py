@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional
 import os
 import argparse
 import pickle
+import pandas as pd  # type: ignore
 
 perturbation_lists = {
     "audio": [
@@ -50,7 +51,7 @@ perturbation_lists = {
 def evaluate_model(
     y_true: np.ndarray,
     y_probs: np.ndarray,
-    metadata: Optional[List[Dict[str, Any]]] = None,
+    metadata: Optional[pd.DataFrame] = None,
     display_title: Optional[str] = None,
     stratify_by: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
@@ -59,10 +60,9 @@ def evaluate_model(
     if metadata is not None and stratify_by:
         results["stratified"] = {}
         for field in stratify_by:
-            field_groups = defaultdict(list)
-            for idx, meta in enumerate(metadata):
-                field_groups[meta.get(field, "unknown")].append(idx)
-            for value, indices in field_groups.items():
+            # Group by the field using DataFrame
+            for value, group_df in metadata.groupby(field):
+                indices = group_df.index.to_numpy()
                 y_true_g = np.array(y_true)[indices]
                 y_probs_g = np.array(y_probs)[indices]
                 if len(np.unique(y_true_g)) < 2:
@@ -162,7 +162,6 @@ def k_fold_linear_probe(
 ):
     from sklearn.linear_model import LogisticRegression  # type: ignore
     from sklearn.model_selection import StratifiedKFold  # type: ignore
-
     skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=random_state)
     results = []
     for fold_idx, (train_idx, test_idx) in enumerate(skf.split(embeddings, labels)):
@@ -171,7 +170,7 @@ def k_fold_linear_probe(
         clf = LogisticRegression(max_iter=1000, class_weight="balanced")
         clf.fit(X_train, y_train)
         y_probs = clf.predict_proba(X_test)[:, 1]
-        meta_test = [metadata[i] for i in test_idx] if metadata is not None else None
+        meta_test = metadata.iloc[test_idx] if metadata is not None else None
         eval_results = evaluate_model(
             y_test,
             y_probs,
@@ -227,13 +226,13 @@ def main():
     if args.metadata:
         with open(args.metadata, "rb") as f:
             metadata = pickle.load(f)
-
+        if not isinstance(metadata, pd.DataFrame):
+            metadata = pd.DataFrame(metadata)
     # Determine stratification columns
     stratify_by = None
     if args.stratify_mode:
         stratify_by = perturbation_lists[args.stratify_mode]
         print(f"Stratifying by {args.stratify_mode} perturbation columns: {stratify_by}")
-
     if args.probe_type == "linear":
         results = k_fold_linear_probe(
             embeddings,
