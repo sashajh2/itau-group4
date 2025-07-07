@@ -4,7 +4,7 @@ moviepy==2.2.1
 numpy
 openl3==0.4.2
 pandas==2.3.0
-scikit_learn
+scikit-learn
 tensorflow_hub==0.16.1
 torch==2.7.1
 transformers==4.53.1
