@@ -109,6 +109,7 @@ def _evaluate_metrics(y_true, y_probs, display_title=None) -> Dict[str, Any]:
     results["best_thresh_fpr"] = best_thresh_fpr
     results["fnr_at_1pfpr"] = best_fnr
     if best_cm_fpr is not None:
+        results["best_cm_fpr"] = best_cm_fpr.tolist()
         ConfusionMatrixDisplay(best_cm_fpr, display_labels=["Real", "Fake"]).plot(
             cmap="Blues"
         )
@@ -127,6 +128,7 @@ def _evaluate_metrics(y_true, y_probs, display_title=None) -> Dict[str, Any]:
     results["best_thresh_acc"] = best_thresh_acc
     results["max_acc"] = best_acc
     if best_cm_acc is not None:
+        results["best_cm_acc"] = best_cm_acc.tolist()
         ConfusionMatrixDisplay(best_cm_acc, display_labels=["Real", "Fake"]).plot(
             cmap="Blues"
         )
