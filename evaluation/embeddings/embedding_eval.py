@@ -189,6 +189,8 @@ def filter_zero_embeddings(embeddings, labels, metadata=None):
     # Handle metadata if provided
     filtered_metadata = None
     if metadata is not None:
+        if len(metadata) != len(embeddings):
+            raise ValueError(f"Metadata length ({len(metadata)}) != embeddings length ({len(embeddings)})")
         if isinstance(metadata, pd.DataFrame):
             filtered_metadata = metadata.iloc[is_nonzero].copy()
         else:
