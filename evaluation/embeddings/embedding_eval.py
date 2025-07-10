@@ -236,6 +236,7 @@ def main():
 
     print(f"Loading embeddings from .npy file: {args.embeddings}")
     embeddings = np.load(args.embeddings)
+    print(len(embeddings))
     with open(args.labels, "rb") as f:
         labels = pickle.load(f)
     metadata = None
