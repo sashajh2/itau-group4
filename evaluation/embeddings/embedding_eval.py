@@ -164,6 +164,40 @@ def k_fold_linear_probe(
         print(f"Fold {fold_idx + 1} results:", eval_results["global"])
     return results
 
+def filter_zero_embeddings(embeddings, labels, metadata=None):
+    """
+    Removes zero vectors and their associated labels/metadata
+    
+    Args:
+        embeddings: np.ndarray of shape (N, D)
+        labels: List/array of length N
+        metadata: Optional pandas DataFrame with N rows
+        
+    Returns:
+        Tuple of (filtered_embeddings, filtered_labels, filtered_metadata)
+    """
+    # Identify non-zero vectors (using any axis for multi-dimensional embeddings)
+    if len(embeddings.shape) == 1:
+        is_nonzero = ~np.all(embeddings == 0)
+    else:
+        is_nonzero = ~np.all(embeddings == 0, axis=1)
+    
+    # Apply filtering
+    filtered_embeddings = embeddings[is_nonzero]
+    filtered_labels = np.array(labels)[is_nonzero]
+    
+    # Handle metadata if provided
+    filtered_metadata = None
+    if metadata is not None:
+        if len(metadata) != len(embeddings):
+            raise ValueError(f"Metadata length ({len(metadata)}) != embeddings length ({len(embeddings)})")
+        if isinstance(metadata, pd.DataFrame):
+            filtered_metadata = metadata.iloc[is_nonzero].copy()
+        else:
+            filtered_metadata = np.array(metadata)[is_nonzero]
+    
+    print(f"Filtered {len(embeddings) - len(filtered_embeddings)} zero vectors")
+    return filtered_embeddings, filtered_labels, filtered_metadata
 
 def main():
     parser = argparse.ArgumentParser(
@@ -202,6 +236,7 @@ def main():
 
     print(f"Loading embeddings from .npy file: {args.embeddings}")
     embeddings = np.load(args.embeddings)
+    print(len(embeddings))
     with open(args.labels, "rb") as f:
         labels = pickle.load(f)
     metadata = None
@@ -210,6 +245,11 @@ def main():
             metadata = pickle.load(f)
         if not isinstance(metadata, pd.DataFrame):
             metadata = pd.DataFrame(metadata)
+    
+     # FILTER ZERO VECTORS HERE
+    embeddings, labels, metadata = filter_zero_embeddings(
+        embeddings, labels, metadata
+    )
     # Determine stratification columns
     stratify_by = None
     if args.stratify_mode:
