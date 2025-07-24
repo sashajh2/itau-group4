@@ -2,7 +2,7 @@ librosa==0.11.0
 matplotlib
 moviepy==2.2.1
 numpy
-openl3==0.4.2
+#openl3==0.4.2
 pandas==2.3.0
 scikit-learn
 seaborn
