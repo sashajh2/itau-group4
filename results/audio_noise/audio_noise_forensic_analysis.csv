@@ -1,0 +1,2 @@
+embedding_A,embedding_B,recall_A,recall_A_or_B,recall_gain,fpr_A,fpr_A_or_B,fp_increase,f1_A,f1_A_or_B,f1_gain,slack_B_picks_up_A,slack_A_picks_up_B
+demucs_hubert,demucs_openl3,0.7980535279805353,0.9440389294403893,0.14598540145985395,0.1319311663479924,0.2141491395793499,0.08221797323135749,0.8118811881188119,0.8518111964873765,0.03993000836856453,60,17
