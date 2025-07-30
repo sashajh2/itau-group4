@@ -1,0 +1,2 @@
+Temporary folder for extracted video/audio segments from .tar archives. 
+Automatically deleted after processing to save space.

@@ -1,0 +1,1 @@
+#Wrapper around Dropbox SDK to abstract upload, download, and access-token logic. Helps avoid copy-pasting Dropbox boilerplate throughout your code.

@@ -1,0 +1,22 @@
+### Dropbox Config ###
+
+dropbox:
+  access_token: "YOUR_ACCESS_TOKEN_HERE"
+  upload_folder: "itau-group4/"  # optional default base path in Dropbox
+
+database:
+  embedding_db_path: "db/embeddings.sqlite3"
+  model_db_path: "db/models.sqlite3"  # if you split model storage
+
+faiss:
+  local_index_dir: "data/faiss_indexes/"
+  index_name_format: "{source}_{embedding_type}_{mode}_{model_name}.index"
+
+data:
+  temp_segment_dir: "data/temp_video_extracted/"
+  processed_metadata_dir: "data/processed_metadata/"
+  dummy_test_embeddings: "data/test/test_embeddings.npy"  # if applicable
+
+defaults:
+  segment_duration: 0.25 # seconds
+  sample_rate: 44100     # for audio extraction, etc.

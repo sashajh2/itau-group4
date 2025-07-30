@@ -1,0 +1,1 @@
+# Takes generated vectors, updates or creates a FAISS index, and saves it to faiss_indexes/

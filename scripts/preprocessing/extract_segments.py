@@ -1,0 +1,1 @@
+#Reads videos (e.g., from .tar), extracts segments, and creates metadata entries in your database.
