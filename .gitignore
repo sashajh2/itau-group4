@@ -8,9 +8,10 @@ __pycache__/
 # OS + IDE cruft
 .DS_Store
 
-
+# Ignore temporary data storage
+data/temp_video_extracted/
+data/faiss_indexes/
 # Project-specific ignores
-*.sqlite3
 *.index
 *.tar
 *.tar.gz

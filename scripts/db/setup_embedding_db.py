@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS segments (
     video_path TEXT,                    -- absolute/relative path to full video (if available)
     start_time REAL,                    -- segment start time in seconds
     duration REAL,                      -- segment duration in seconds
-    video_label TEXT,                   -- "real", "fake"
-    audio_label TEXT                   -- "real", "fake"
+    video_label INTEGER,                -- 0: real, 1: fake 
+    audio_label INTEGER                 -- 0: real, 1: fake
 );
 """)
 
