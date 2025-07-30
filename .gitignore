@@ -8,8 +8,6 @@ __pycache__/
 # OS + IDE cruft
 .DS_Store
 
-# Ignore real config file with secrets
-configs/config.yaml
 
 # Project-specific ignores
 *.sqlite3
