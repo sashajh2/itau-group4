@@ -1,7 +1,7 @@
 import yaml
 import os
 
-def load_config(path="config/config.yaml"):
+def load_config(path="configs/config.yaml"):
     with open(path, "r") as f:
         raw = f.read()
     expanded = os.path.expandvars(raw)

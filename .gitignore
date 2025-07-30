@@ -9,7 +9,7 @@ __pycache__/
 .DS_Store
 
 # Ignore real config file with secrets
-config/config.yaml
+configs/config.yaml
 
 # Project-specific ignores
 *.sqlite3
