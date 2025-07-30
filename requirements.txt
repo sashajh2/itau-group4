@@ -13,5 +13,3 @@ transformers==4.53.1
 dropbox
 #FAISS
 faiss-cpu
-#SQLite
-sqlite3
