@@ -1,6 +1,8 @@
 ### Dropbox Config ###
 
 dropbox:
+  app_key: "nlgi374kz7pbaor"
+  app_secret: "YOUR_APP_SECRET_HERE"
   access_token: "YOUR_ACCESS_TOKEN_HERE"
   upload_folder: "itau-group4/"  # optional default base path in Dropbox
 

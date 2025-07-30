@@ -2,7 +2,6 @@
 
 import sqlite3
 import os
-import yaml
 from utils.config_loader import load_config
 
 config = load_config()
