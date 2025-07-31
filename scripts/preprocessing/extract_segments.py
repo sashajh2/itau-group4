@@ -118,7 +118,20 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
 def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-
+    cursor.execute("DROP TABLE IF EXISTS segments")
+    cursor.execute("""
+        CREATE TABLE segments (
+            segment_id TEXT PRIMARY KEY,
+            source TEXT,
+            video_id TEXT,
+            video_path TEXT,
+            start_time REAL,
+            duration REAL,
+            video_label INTEGER,
+            audio_label INTEGER
+        )
+    """)
+    
     for _, row in segment_metadata_df.iterrows():
         video_path_parts = row['video_path'].split('/')
         parent_folder = video_path_parts[-3]  # e.g., '0N1oA9LUEc4'
@@ -139,8 +152,8 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
             row['video_path'],
             float(row['segment_start']),
             float(row['segment_end'] - row['segment_start']),
-            "fake" if row['video_label'] else "real",
-            "fake" if row['audio_label'] else "real",
+            row['video_label'],
+            row['audio_label'],
         ))
 
     conn.commit()
