@@ -19,6 +19,9 @@ data:
   processed_metadata_dir: "data/processed_metadata/"
   dummy_test_embeddings: "data/test/test_embeddings.npy"  # if applicable
 
+huggingface:
+  token: "YOUR_HUGGINGFACE_TOKEN"
+
 defaults:
   segment_duration: 0.25 # seconds
   sample_rate: 44100     # for audio extraction, etc.
