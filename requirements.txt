@@ -13,3 +13,5 @@ transformers==4.53.1
 dropbox
 #FAISS
 faiss-cpu
+huggingface_hub
+tqdm
