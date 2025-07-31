@@ -1,0 +1,3 @@
+Local storage of .index files created using FAISS. 
+This is where you build/merge indexes before uploading to Dropbox. 
+Each .index is a binary representation of vectors used for similarity search.

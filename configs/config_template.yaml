@@ -1,0 +1,27 @@
+### Dropbox Config ###
+
+dropbox:
+  app_key: "nlgi374kz7pbaor"
+  app_secret: "y0fe5irxg3b3z85"
+  access_token: "sl.u.AF46sefH-uE_kdLZBZo0gwYO0gmvrSmcEHxgSrF6_U4lAIahZxs6YD34Va31jsbPet2BoWdFcB0kxv8Q8LW__TpzYVN5fC7nPI8uip5XLs1FMe9YFUv5kTaScP2wGgMHtzX_PF2k6enWxHJSAlawNUugPI2LFzjogLjvost6fqJ23xrG4pf1JOy8S7-0pECb3Z-gwQK9zxvRP1xhWSK3n0Bkvp4ss6yEpJzHYdatavshtdpI-OW2E8Jl1pLVJ2i2xdaTRJJCh71uY__S5Y0lJztSXODmcQmX66CqW7t2IZVDM1nGEiZCQerx1KNZMdkDaDmaGdWo0eFj7syiKhAEqubYapJ7VkIyF0yi-Cz3fCr2fL4DDPxxsZC62JS8JchKCpncnv1KI1FVqw8DSaL_0ubmX0P2msI_1OWLhKQ2ot2xfoHHnlUsifF7Ftk9losfEt1Aj7rqYHF8TF4KY7Y60dYskS5w-pEWoXm__wk2fYxgUy56sVCFBJrinQ9pLBZhZWqP8zM6co96JtqxjDFLqZvMPRO3mJYi0HlDYH3FQGrH5K95Uzl7Vg659MMjbBc-5RGO910qFbh988dNywQHAGgcNcsPQbPFJoPUYpbhGL14hWKdHKtPZWYGpCRhp16-3TFog_XYlhMf-W7JKaf0MJzD3VfByjrrVbb2HbE1-4wexyF9J1TyDy2dL27r5TgKHxoG-ARfl3ai3yOnBluFyciR-QFcVYCY6SF8x-XzAL4n0dboUepdGdSV0GYrTu9faY0tIpLFt5ucCi8cOJz1p39pNw9FxT0b-9kQahS7DaAj1FZqT8dCnZqpbuo5D0XWrQdTf8bUYbgM3IBgvmLCQ74dH6G_tg69RWvXHsuY6CWIVOrviLgtjRZ8InYbdsw6Bb3COSjRizTT_tAS9IHjnX5-JleSjJZlHX-aWHazUKTiN5wYjvkbGIZbMpJG6Bz_sSW5ucP0Z1W7NV_heyb4_2WNu35bimhJFrm6edbiqJ86UXH1SUIXdiCmIDX_iidDSSdeRmMm0j3tlExZrnnB4gVvtNGCbta1C6J8n7_o0lrZ2J1wbYJZvaN3liEwRyGNYcKiR4x3l3lrNpTZBwfjYrpPXUPr8s2g4qpQyk17mozTC5z62Ic3bUWtYB3s1l5LKZCT-0Oq4prhSDoBeodQaxynDi1rUFstwHZSUA9vG7BMm9CD-BVpcr81Xar8Hpfl5nO4UbmBfwMTZpKY3of7hLcQ2kTYrlIqYSP9m6ziKOdiHVfjymlnteI-lkMv0RCNyJRgg5Kyu_ul7nczYOlyJtDQm3jyCY_kxxsm4lcigm89rzCk9NLHq3UQ7Gb90AA9P7k"
+  upload_folder: "itau-group4/"  # optional default base path in Dropbox
+
+database:
+  embedding_db_path: "db/embeddings.sqlite3"
+  model_db_path: "db/models.sqlite3"  # if you split model storage
+
+faiss:
+  local_index_dir: "data/faiss_indexes/"
+  index_name_format: "{source}_{embedding_type}_{mode}_{model_name}.index"
+
+data:
+  temp_segment_dir: "data/temp_video_extracted/"
+  processed_metadata_dir: "data/processed_metadata/"
+  dummy_test_embeddings: "data/test/test_embeddings.npy"  # if applicable
+
+huggingface:
+  token: "YOUR_HUGGINGFACE_TOKEN"
+
+defaults:
+  segment_duration: 0.25 # seconds
+  sample_rate: 44100     # for audio extraction, etc.

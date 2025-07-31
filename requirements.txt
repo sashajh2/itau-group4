@@ -9,3 +9,9 @@ seaborn
 tensorflow_hub==0.16.1
 torch==2.7.1
 transformers==4.53.1
+# Dropbox SDK
+dropbox
+#FAISS
+faiss-cpu
+huggingface_hub
+tqdm
