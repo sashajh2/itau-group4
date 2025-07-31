@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS segments (
     start_time REAL,                    -- segment start time in seconds
     duration REAL,                      -- segment duration in seconds
     video_label INTEGER,                -- 0: real, 1: fake 
-    audio_label INTEGER                 -- 0: real, 1: fake
+    audio_label INTEGER,                 -- 0: real, 1: fake
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """)
 
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
     reducer_id TEXT,                      -- ID of reducer in model store (if applicable)
     contraster_id TEXT,                   -- ID of contraster in model store (if applicable)
     embedding_path TEXT,                  -- absolute/relative path to embedding file in Dropbox
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (segment_id) REFERENCES segments(segment_id)
 );
 """)

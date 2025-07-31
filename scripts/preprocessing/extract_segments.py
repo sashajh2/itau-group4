@@ -1,4 +1,5 @@
 #Reads videos (e.g., from .tar), extracts segments, and creates metadata entries in your database.
+from datetime import datetime
 import os
 import json
 import random
@@ -119,6 +120,8 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
+    created_at = datetime.utcnow().isoformat()
+
     for _, row in segment_metadata_df.iterrows():
         video_path_parts = row['video_path'].split('/')
         parent_folder = video_path_parts[-3]  # e.g., '0N1oA9LUEc4'
@@ -128,10 +131,11 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
 
         segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}"
         video_id = f"{parent_folder}/{child_folder}"
+
         cursor.execute("""
             INSERT OR REPLACE INTO segments (
-                segment_id, source, video_id, video_path, start_time, duration, video_label, audio_label
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                segment_id, source, video_id, video_path, start_time, duration, video_label, audio_label, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             segment_id,
             "AVDeepfake1M",
@@ -141,6 +145,7 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
             float(row['segment_end'] - row['segment_start']),
             row['video_label'],
             row['audio_label'],
+            created_at
         ))
 
     conn.commit()
