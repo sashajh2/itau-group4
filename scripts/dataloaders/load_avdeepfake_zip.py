@@ -25,3 +25,4 @@ subprocess.run([
 
 # Extract using 7z (make sure 7z is installed)
 subprocess.run(["7z", "x", ZIP_FILE, f"-o{LOCAL_DIR}/extracted"])
+
