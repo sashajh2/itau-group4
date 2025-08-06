@@ -9,6 +9,10 @@ seaborn
 tensorflow_hub==0.16.1
 torch==2.7.1
 transformers==4.53.1
+pyarrow==21.0.0
+PyDrive2==1.21.3
+# Google Drive
+gdown==5.2.0 
 # Dropbox SDK
 dropbox
 #FAISS

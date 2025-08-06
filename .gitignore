@@ -11,6 +11,9 @@ __pycache__/
 # Ignore config file
 configs/config.yaml
 
+# Ignore Google Drive json
+credentials.json
+
 # Ignore temporary data storage
 data/temp_video_extracted/
 data/faiss_indexes/
