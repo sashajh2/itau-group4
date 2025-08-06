@@ -7,7 +7,7 @@ class Args:
         self.rgb_range = 255
         self.reduction = 16
 
-class RidnetPca128Embedder:
+class RidnetEmbedder:
     def __init__(self):
         self.model_name = "ridnet_pca_128"
         self.mode = "video noise"
