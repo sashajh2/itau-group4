@@ -2,6 +2,8 @@ from moviepy import VideoFileClip, AudioClip
 import numpy as np
 import random
 from utils import install_ffmpeg
+import cv2
+import subprocess
 
 def get_video_duration(video_path):
     try:
