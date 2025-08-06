@@ -75,6 +75,14 @@ for segment in segments:
         except Exception as e:
             print(f"❌ Failed to embed {segment_id} with {embedder.model_name}: {e}")
 
+# Step 4: PCA for ridnet embeddings
+for (model, mode), data in accumulator.items():
+    if model == "ridnet_pca_128":
+        embs = np.stack(data["embeddings"])  # shape: (N, D)
+        pca = PCA(n_components=128)
+        pca.fit(embs)
+        data["embeddings"] = pca.transform(embs)
+
 # Step 4: Save batch .npy and .csv per embedder
 for (model, mode), data in accumulator.items():
     embs = np.stack(data["embeddings"])  # shape: (N, D)

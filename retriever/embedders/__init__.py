@@ -6,7 +6,7 @@ from .senet_embedder import SenetEmbedder
 from .voicefixer_openl3_embedder import VoicefixerOpenl3Embedder
 
 VIDEO_EMBEDDERS = [
-    RidnetPca128Embedder(),
+    # RidnetPca128Embedder(),
     SenetEmbedder(),
 ]
 
