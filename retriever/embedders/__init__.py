@@ -5,11 +5,14 @@ from .openl3_embedder import Openl3Embedder
 from .senet_embedder import SenetEmbedder
 from .voicefixer_openl3_embedder import VoicefixerOpenl3Embedder
 
-EMBEDDERS = [
-    HubertEmbedder(),
+VIDEO_EMBEDDERS = [
     RidnetPca128Embedder(),
+    SenetEmbedder(),
+]
+
+AUDIO_EMBEDDERS = [
+    HubertEmbedder(),
     DemucsOpenl3Embedder(),
     Openl3Embedder(),
-    SenetEmbedder(),
     VoicefixerOpenl3Embedder(),
 ]

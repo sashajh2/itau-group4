@@ -1,13 +1,12 @@
+import numpy as np
+
 class RidnetPca128Embedder:
     def __init__(self):
+        self.model_name = "ridnet_pca_128"
+        self.mode = "video noise"
+    
+    def get_video_noise(self, video: str) -> str:
         pass
 
-    def embed(self, text: str) -> np.ndarray:
+    def embed(self, video: str) -> np.ndarray:
         pass
-
-    @property
-    def model_name(self) -> str:
-        return "ridnet_pca_128"
-    @property
-    def mode(self):
-        return "video noise"
