@@ -39,7 +39,9 @@ def load_video_metadata(base_dir: str) -> pd.DataFrame:
                         'video_label': video_label,
                         'audio_fake_segments': audio_fake_segments if audio_fake_segments else None,
                         'visual_fake_segments': visual_fake_segments if visual_fake_segments else None,
-                        'source_folder': root
+                        'source_folder': root,
+                        'audio_model': audio_model,
+                        'video_model': video_model
                     })
 
                 except Exception as e:
@@ -65,6 +67,8 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
                     'source_folder': row['source_folder'],
                     'segment_start': start,
                     'segment_end': end,
+                    'audio_model': row['audio_model'],
+                    'video_model': row['video_model']
                 })
 
         # audio fake, video real
@@ -79,7 +83,9 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
                     'json_path': row['json_path'],
                     'source_folder': row['source_folder'],
                     'segment_start': start,
-                    'segment_end': end
+                    'segment_end': end,
+                    'audio_model': row['audio_model'],
+                    'video_model': row['video_model']
                 })
         # audio real, video fake
         elif row['audio_label'] == 0 and row['video_label'] == 1:
@@ -93,7 +99,9 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
                     'json_path': row['json_path'],
                     'source_folder': row['source_folder'],
                     'segment_start': start,
-                    'segment_end': end
+                    'segment_end': end,
+                    'audio_model': row['audio_model'],
+                    'video_model': row['video_model']
                 })
         # both real
         else:
@@ -111,7 +119,9 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
                 'json_path': row['json_path'],
                 'source_folder': row['source_folder'],
                 'segment_start': start,
-                'segment_end': end
+                'segment_end': end,
+                'audio_model': row['audio_model'],
+                'video_model': row['video_model']
             })
 
     return pd.DataFrame(segment_rows)
@@ -134,8 +144,8 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
 
         cursor.execute("""
             INSERT OR REPLACE INTO segments (
-                segment_id, source, video_id, video_path, start_time, duration, video_label, audio_label, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                segment_id, source, video_id, video_path, start_time, duration, video_label, audio_label, created_at, audio_model, video_model
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             segment_id,
             "AVDeepfake1M",
@@ -145,7 +155,9 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
             float(row['segment_end'] - row['segment_start']),
             row['video_label'],
             row['audio_label'],
-            created_at
+            created_at,
+            row['audio_model'], # audio_model
+            row['video_model']  # video_model
         ))
 
     conn.commit()
