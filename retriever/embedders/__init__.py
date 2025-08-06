@@ -1,5 +1,5 @@
 from .hubert_embedder import HubertEmbedder
-from .ridnet_pca_embedder import RidnetEmbedder
+from .ridnet_embedder import RidnetEmbedder
 from .demucs_openl3_embedder import DemucsOpenl3Embedder
 from .openl3_embedder import Openl3Embedder
 from .senet_embedder import SenetEmbedder
