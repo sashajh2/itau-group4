@@ -61,7 +61,7 @@ def embed_segments(segments):
 
     return accumulator
 
-def save_embeddings(accumulator, output_dir, created_after, created_before):
+def save_embeddings(accumulator, output_dir, created_at):
     os.makedirs(output_dir, exist_ok=True)
 
     for (model, mode), data in accumulator.items():
@@ -71,7 +71,7 @@ def save_embeddings(accumulator, output_dir, created_after, created_before):
         embs = np.stack(data["embeddings"])
         seg_ids = data["segment_ids"]
 
-        base = f"{model}_{mode}_{created_after[:10]}_{created_before[:10]}"
+        base = f"{model}_{mode}_{created_at}"
         npy_path = os.path.join(output_dir, f"{base}.npy")
         csv_path = os.path.join(output_dir, f"{base}.csv")
 
@@ -82,14 +82,14 @@ def save_embeddings(accumulator, output_dir, created_after, created_before):
 
         print(f"✅ Saved: {npy_path} and {csv_path}")
 
-def insert_embeddings_to_db(accumulator, db_path, created_after, created_before, output_dir):
+def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
     now = datetime.utcnow().isoformat()
 
     for (model, mode), data in accumulator.items():
         if not data["embeddings"]:
             continue
 
-        base = f"{model}_{mode}_{created_after[:10]}_{created_before[:10]}"
+        base = f"{model}_{mode}_{created_at}"
         npy_path = os.path.join(output_dir, f"{base}.npy")
 
         for sid in data["segment_ids"]:
@@ -141,25 +141,23 @@ def main():
     embedding_out_dir = config["paths"]["embedding_dir"]
 
     # Dates
-    # ###
     # # 2025-07-31T16:46:45.022260
     # # 2025-08-01T15:30:28.371559
-    # ###
-    created_after = "2024-07-01T00:00:00"
-    created_before = "2024-08-01T00:00:00"
+    created_at = "2025-07-31T16:46:45.022260"
 
-    segments = get_segments_by_created_at(db_path, created_after, created_before)
+    segments = get_segments_by_created_at(db_path, created_at)
     accumulator = embed_segments(segments)
 
-    save_embeddings(accumulator, embedding_out_dir, created_after, created_before)
+    print(accumulator)
+    save_embeddings(accumulator, embedding_out_dir, created_at)
     
     # Optional: insert to DB
     insert_embeddings_to_db(
-        accumulator, db_path, created_after, created_before, embedding_out_dir
+        accumulator, db_path, created_at, embedding_out_dir
     )
 
     # Optional: FAISS index + Dropbox
-    create_faiss_index_and_upload(embedding_out_dir)
+    create_faiss_index_and_upload(embedding_out_dir)    
 
 
 if __name__ == "__main__":

@@ -67,13 +67,13 @@ def get_embeddings_by_segment(db_path, segment_id):
         return [dict(zip(columns, row)) for row in rows]
 
 
-def get_segments_by_created_at(db_path, created_after, created_before):
+def get_segments_by_created_at(db_path, created_at):
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM segments
-            WHERE created_at >= ? AND created_at < ?
-        """, (created_after, created_before))
+            WHERE created_at == ?
+        """, (created_at,))
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
         return [dict(zip(columns, row)) for row in rows]
