@@ -5,7 +5,7 @@ import torch
 import pickle
 import numpy as np
 from facenet_pytorch import MTCNN
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 from dropbox.dropbox_utils import download_file
 
 class SenetEmbedder:
@@ -22,7 +22,7 @@ class SenetEmbedder:
     def get_model_weights(self):
         if not os.path.exists("models/pretrained/senet/senet50_ft_weight.pkl"):
             download_file("models/pretrained/senet/senet50_ft_weight.pkl", "models/pretrained/senet/senet50_ft_weight.pkl")
-        return torch.load("models/pretrained/senet/senet50_ft_weight.pkl")
+        return torch.load("models/pretrained/senet/senet50_ft_weight.pkl", weights_only=False)
 
     def load_model(self):
         from models.pretrained.senet.senet import senet50

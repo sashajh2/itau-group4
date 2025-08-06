@@ -39,6 +39,7 @@ def embed_segments(segments):
                     key = (embedder.model_name, embedder.mode)
                     accumulator[key]["embeddings"].append(emb)
                     accumulator[key]["segment_ids"].append(segment_id)
+                    print(f"✅ Audio embed success {segment_id} with {embedder.model_name}")
                 except Exception as e:
                     print(f"❌ Audio embed fail {segment_id} with {embedder.model_name}: {e}")
 
@@ -53,6 +54,7 @@ def embed_segments(segments):
                     key = (embedder.model_name, embedder.mode)
                     accumulator[key]["embeddings"].append(emb)
                     accumulator[key]["segment_ids"].append(segment_id)
+                    print(f"✅ Video embed success {segment_id} with {embedder.model_name}")
                 except Exception as e:
                     print(f"❌ Video embed fail {segment_id} with {embedder.model_name}: {e}")
 
@@ -145,19 +147,33 @@ def main():
     # # 2025-08-01T15:30:28.371559
     created_at = "2025-07-31T16:46:45.022260"
 
+    print(f"Getting segments for {created_at}")
     segments = get_segments_by_created_at(db_path, created_at)
-    accumulator = embed_segments(segments)
+    print(f"Found {len(segments)} segments")
 
-    print(accumulator)
-    save_embeddings(accumulator, embedding_out_dir, created_at)
+    test_segment = segments[0]
+    print(f"Embedding test segment {test_segment['segment_id']}")
+    accumulator = embed_segments(test_segment)
+    print(f"Embedding done")
+
+    # Print keys and embedding shapes
+    for (model, mode), data in accumulator.items():
+        print(f"--- {model} | {mode} ---")
+        print(f"Num embeddings: {len(data['embeddings'])}")
+        if data["embeddings"]:
+            print(f"Shape: {np.array(data['embeddings'][0]).shape}")
+            print(f"Segment IDs: {data['segment_ids']}")
+        else:
+            print("⚠️ No embeddings produced.")
+    # save_embeddings(accumulator, embedding_out_dir, created_at)
     
-    # Optional: insert to DB
-    insert_embeddings_to_db(
-        accumulator, db_path, created_at, embedding_out_dir
-    )
+    # # Optional: insert to DB
+    # insert_embeddings_to_db(
+    #     accumulator, db_path, created_at, embedding_out_dir
+    # )
 
-    # Optional: FAISS index + Dropbox
-    create_faiss_index_and_upload(embedding_out_dir)    
+    # # Optional: FAISS index + Dropbox
+    # create_faiss_index_and_upload(embedding_out_dir)    
 
 
 if __name__ == "__main__":

@@ -2,8 +2,7 @@
 
 import numpy as np
 import torch
-from transformers import HubertModel, HubertProcessor
-from moviepy.audio.AudioClip import AudioClip
+from transformers import HubertModel
 
 class HubertEmbedder:
     def __init__(self, sr=44100):
