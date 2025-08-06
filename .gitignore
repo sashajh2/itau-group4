@@ -29,3 +29,4 @@ models/pretrained/senet/senet50_ft_weight.pkl
 # Don’t ignore ALL .npy files if you use some in testing
 # Optionally exclude only large embedding arrays:
 # data/embeddings/*.npy  ← only if you create a folder like that
+# COMMIT PRACTICE"
