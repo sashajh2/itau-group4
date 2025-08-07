@@ -1,10 +1,10 @@
-from retriever.embedders import AUDIO_EMBEDDERS, VIDEO_EMBEDDERS
+from retriever.embedders import AUDIO_EMBEDDERS, VIDEO_EMBEDDERS, DENOISERS
 from db.embedding_store_utils import get_segments_by_created_at, insert_embedding
 from utils.config_loader import load_config
 import numpy as np
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from moviepy import VideoFileClip
 from utils.embedding_utils import get_audio_array
 import faiss
@@ -33,18 +33,62 @@ def embed_segments(segments):
             sr = audio.fps
             audio_array = get_audio_array(audio, sr)
 
+            # Process audio with denoisers to get noised and denoised versions
+            denoised_audio = {}
+            noise_audio = {}
+            
+            for denoiser_name, denoiser in DENOISERS.items():
+                try:
+                    # Use the new split_audio function for efficiency
+                    if denoiser_name == "voicefixer":
+                        denoised, noise = denoiser.split_audio(audio_array, sr=sr)
+                    else:
+                        denoised, noise = denoiser.split_audio(audio_array)
+                    
+                    denoised_audio[denoiser_name] = denoised
+                    noise_audio[denoiser_name] = noise
+                    print(f"✅ Denoising success with {denoiser_name}")
+                except Exception as e:
+                    print(f"❌ Denoising fail with {denoiser_name}: {e}")
+
             for embedder in AUDIO_EMBEDDERS:
                 try:
-                    temp_audio = (
-                        embedder.get_audio_noise(audio_array)
-                        if embedder.mode == "audio noise"
-                        else audio_array
-                    )
-                    emb = embedder.embed(temp_audio, sr)
-                    key = (embedder.model_name, embedder.mode)
-                    accumulator[key]["embeddings"].append(emb)
-                    accumulator[key]["segment_ids"].append(segment_id)
-                    print(f"✅ Audio embed success {segment_id} with {embedder.model_name}")
+                    if embedder.mode == "audio":
+                        # Regular audio embedding
+                        emb = embedder.embed(audio_array, sr)
+                        key = (embedder.model_name, embedder.mode)
+                        accumulator[key]["embeddings"].append(emb)
+                        accumulator[key]["segment_ids"].append(segment_id)
+                        print(f"✅ Audio embed success {segment_id} with {embedder.model_name}")
+                        
+                    elif embedder.mode == "audio_denoised":
+                        # Denoised audio embedding - try all denoisers
+                        for denoiser_name, denoised in denoised_audio.items():
+                            try:
+                                emb = embedder.embed(denoised, sr)
+                                key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
+                                if key not in accumulator:
+                                    accumulator[key] = {"embeddings": [], "segment_ids": []}
+                                accumulator[key]["embeddings"].append(emb)
+                                accumulator[key]["segment_ids"].append(segment_id)
+                                print(f"✅ Denoised embed success {segment_id} with {embedder.model_name}_{denoiser_name}")
+                            except Exception as e:
+                                print(f"❌ Denoised embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
+                                
+                    elif embedder.mode == "audio_noise":
+                        # Noise audio embedding - try all denoisers
+                        for denoiser_name, noise in noise_audio.items():
+                            try:
+                                emb = embedder.embed(noise, sr)
+                                key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
+                                if key not in accumulator:
+                                    accumulator[key] = {"embeddings": [], "segment_ids": []}
+                                accumulator[key]["embeddings"].append(emb)
+                                accumulator[key]["segment_ids"].append(segment_id)
+                                print(f"✅ Noise embed success {segment_id} with {embedder.model_name}_{denoiser_name}")
+                            except Exception as e:
+                                print(f"❌ Noise embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
+                                
                 except Exception as e:
                     print(f"❌ Audio embed fail {segment_id} with {embedder.model_name}: {e}")
 
@@ -78,7 +122,18 @@ def save_embeddings(accumulator, output_dir, created_at):
         embs = np.stack(data["embeddings"])
         seg_ids = data["segment_ids"]
 
-        base = f"{model}_{mode}_{created_at}"
+        # Create appropriate filename based on model and mode
+        if mode == "audio_denoised":
+            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+        elif mode == "audio_noise":
+            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+        else:
+            base = f"{model}_{mode}_{created_at}"
+            
         npy_path = os.path.join(output_dir, f"{base}.npy")
         csv_path = os.path.join(output_dir, f"{base}.csv")
 
@@ -90,13 +145,24 @@ def save_embeddings(accumulator, output_dir, created_at):
         print(f"✅ Saved: {npy_path} and {csv_path}")
 
 def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     for (model, mode), data in accumulator.items():
         if not data["embeddings"]:
             continue
 
-        base = f"{model}_{mode}_{created_at}"
+        # Create appropriate filename based on model and mode
+        if mode == "audio_denoised":
+            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+        elif mode == "audio_noise":
+            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+        else:
+            base = f"{model}_{mode}_{created_at}"
+            
         npy_path = os.path.join(output_dir, f"{base}.npy")
 
         for sid in data["segment_ids"]:

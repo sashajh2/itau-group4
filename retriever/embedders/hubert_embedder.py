@@ -6,12 +6,12 @@ from transformers import HubertModel
 from utils.config_loader import load_config
 
 class HubertEmbedder:
-    def __init__(self, sr=44100):
+    def __init__(self, mode="audio", sr=44100):
         config = load_config()
         self.hf_token = config["huggingface"]["token"]
 
         self.model_name = "hubert"
-        self.mode = "audio"
+        self.mode = mode  # "audio", "audio_noise", "audio_denoised"
         self.sr = sr
 
         # Load once
