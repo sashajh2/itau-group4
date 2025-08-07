@@ -7,12 +7,12 @@ from .voicefixer_openl3_embedder import VoicefixerOpenl3Embedder
 
 VIDEO_EMBEDDERS = [
     # RidnetEmbedder(),
-    # SenetEmbedder(),
+    SenetEmbedder(),
 ]
 
 AUDIO_EMBEDDERS = [
-    HubertEmbedder(),
-    DemucsOpenl3Embedder(),
-    Openl3Embedder(),
-    VoicefixerOpenl3Embedder(),
+    # HubertEmbedder(),
+    # DemucsOpenl3Embedder(),
+    # Openl3Embedder(),
+    # VoicefixerOpenl3Embedder(),
 ]

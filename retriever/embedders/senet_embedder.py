@@ -20,9 +20,20 @@ class SenetEmbedder:
         self.MEAN_BGR = np.array([131.0912, 103.8827, 91.4953], dtype=np.float32)
 
     def get_model_weights(self):
-        if not os.path.exists("models/pretrained/senet/senet50_ft_weight.pkl"):
-            download_file("models/pretrained/senet/senet50_ft_weight.pkl", "models/pretrained/senet/senet50_ft_weight.pkl")
-        return torch.load("models/pretrained/senet/senet50_ft_weight.pkl", weights_only=False)
+        weight_path = "models/pretrained/senet/senet50_ft_weight.pkl"
+        if not os.path.exists(weight_path):
+            download_file(weight_path, weight_path)
+        
+        # Properly load using pickle with latin1 encoding
+        with open(weight_path, "rb") as f:
+            state = pickle.load(f, encoding="latin1")
+        
+        # Convert numpy arrays to torch tensors
+        for k, v in state.items():
+            if isinstance(v, np.ndarray):
+                state[k] = torch.from_numpy(v)
+        
+        return state
 
     def load_model(self):
         from models.pretrained.senet.senet import senet50

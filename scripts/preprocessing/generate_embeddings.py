@@ -168,15 +168,15 @@ def main():
             print(f"Segment IDs: {data['segment_ids']}")
         else:
             print("⚠️ No embeddings produced.")
-    save_embeddings(accumulator, embedding_out_dir, created_at)
+    # save_embeddings(accumulator, embedding_out_dir, created_at)
     
-    # Optional: insert to DB
-    insert_embeddings_to_db(
-        accumulator, db_path, created_at, embedding_out_dir
-    )
+    # # Optional: insert to DB
+    # insert_embeddings_to_db(
+    #     accumulator, db_path, created_at, embedding_out_dir
+    # )
 
-    # Optional: FAISS index + Dropbox
-    create_faiss_index_and_upload(embedding_out_dir)    
+    # # Optional: FAISS index + Dropbox
+    # create_faiss_index_and_upload(embedding_out_dir)    
 
 
 if __name__ == "__main__":
