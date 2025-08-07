@@ -17,13 +17,18 @@ def embed_segments(segments):
     }
 
     for segment in segments:
+        print("segment: ", segment)
+        print("type: ", type(segment))
         segment_id = segment["segment_id"]
         filepath = segment["video_path"]
         start_time = segment["start_time"]
         duration = segment["duration"]
 
         try:
-            video = VideoFileClip(filepath).subclip(start_time, start_time + duration)
+            video = VideoFileClip(filepath)
+            print("Successfully loaded video: ", type(video))
+            video = video.subclipped(start_time, start_time + duration)
+            print("Successfully subclipped video: ", type(video))
             audio = video.audio
             sr = audio.fps
             audio_array = get_audio_array(audio, sr)
@@ -139,8 +144,6 @@ def create_faiss_index_and_upload(output_dir, dim=512, dropbox_path="/faiss_inde
 def main():
     config = load_config()
     db_path = config["database"]["embedding_db_path"]
-    segment_dir = config["paths"]["segment_dir"]
-    embedding_out_dir = config["paths"]["embedding_dir"]
 
     # Dates
     # # 2025-07-31T16:46:45.022260
@@ -153,7 +156,7 @@ def main():
 
     test_segment = segments[0]
     print(f"Embedding test segment {test_segment['segment_id']}")
-    accumulator = embed_segments(test_segment)
+    accumulator = embed_segments([test_segment])
     print(f"Embedding done")
 
     # Print keys and embedding shapes
@@ -165,15 +168,15 @@ def main():
             print(f"Segment IDs: {data['segment_ids']}")
         else:
             print("⚠️ No embeddings produced.")
-    # save_embeddings(accumulator, embedding_out_dir, created_at)
+    save_embeddings(accumulator, embedding_out_dir, created_at)
     
-    # # Optional: insert to DB
-    # insert_embeddings_to_db(
-    #     accumulator, db_path, created_at, embedding_out_dir
-    # )
+    # Optional: insert to DB
+    insert_embeddings_to_db(
+        accumulator, db_path, created_at, embedding_out_dir
+    )
 
-    # # Optional: FAISS index + Dropbox
-    # create_faiss_index_and_upload(embedding_out_dir)    
+    # Optional: FAISS index + Dropbox
+    create_faiss_index_and_upload(embedding_out_dir)    
 
 
 if __name__ == "__main__":
