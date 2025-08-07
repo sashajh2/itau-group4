@@ -11,8 +11,8 @@ VIDEO_EMBEDDERS = [
 ]
 
 AUDIO_EMBEDDERS = [
-    # HubertEmbedder(),
-    # DemucsOpenl3Embedder(),
-    # Openl3Embedder(),
-    # VoicefixerOpenl3Embedder(),
+    HubertEmbedder(),
+    DemucsOpenl3Embedder(),
+    Openl3Embedder(),
+    VoicefixerOpenl3Embedder(),
 ]
