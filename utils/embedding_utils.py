@@ -45,6 +45,7 @@ def get_audio_array(audio_clip, sr=44100) -> np.ndarray:
 
     return audio.astype(np.float32)  # ensure dtype
 
+
 def extract_three_frames(video_path, start_time, end_time):
     """
     Extracts 3 equally spaced frames from the given time interval of a video.
@@ -57,7 +58,7 @@ def extract_three_frames(video_path, start_time, end_time):
     Returns:
         List of np.ndarray frames.
     """
-    ### TO CHANGE ###
+    
     # Install ffmpeg if necessary
     install_ffmpeg()
 
