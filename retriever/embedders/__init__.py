@@ -18,15 +18,7 @@ VIDEO_EMBEDDERS = [
 ]
 
 AUDIO_EMBEDDERS = [
-    # Regular audio embedders
+    # Regular audio embedders only
     HubertEmbedder(mode="audio"),
     Openl3Embedder(mode="audio"),
-    
-    # Denoised audio embedders
-    HubertEmbedder(mode="audio_denoised"),
-    Openl3Embedder(mode="audio_denoised"),
-    
-    # Noise audio embedders  
-    HubertEmbedder(mode="audio_noise"),
-    Openl3Embedder(mode="audio_noise"),
 ]

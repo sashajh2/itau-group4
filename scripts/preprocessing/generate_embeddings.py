@@ -1,4 +1,6 @@
 from retriever.embedders import AUDIO_EMBEDDERS, VIDEO_EMBEDDERS, DENOISERS
+from retriever.embedders.hubert_embedder import HubertEmbedder
+from retriever.embedders.openl3_embedder import Openl3Embedder
 from db.embedding_store_utils import get_segments_by_created_at, insert_embedding
 from utils.config_loader import load_config
 import numpy as np
@@ -11,10 +13,21 @@ import faiss
 import dropbox
 
 def embed_segments(segments):
+    # Create accumulator with regular audio embedders
     accumulator = {
         (e.model_name, e.mode): {"embeddings": [], "segment_ids": []}
         for e in AUDIO_EMBEDDERS + VIDEO_EMBEDDERS
     }
+    
+    # Add entries for denoised/noise embedders that will be created dynamically
+    for embedder in AUDIO_EMBEDDERS:
+        if embedder.mode == "audio":
+            for denoiser_name in DENOISERS.keys():
+                # Add entries for both denoised and noise modes
+                key_denoised = (f"{embedder.model_name}_{denoiser_name}", "audio_denoised")
+                key_noise = (f"{embedder.model_name}_{denoiser_name}", "audio_noise")
+                accumulator[key_denoised] = {"embeddings": [], "segment_ids": []}
+                accumulator[key_noise] = {"embeddings": [], "segment_ids": []}
 
     for segment in segments:
         print("segment: ", segment)
@@ -51,46 +64,51 @@ def embed_segments(segments):
                 except Exception as e:
                     print(f"❌ Denoising fail with {denoiser_name}: {e}")
 
+            # Process regular audio embedders
             for embedder in AUDIO_EMBEDDERS:
-                try:
-                    if embedder.mode == "audio":
-                        # Regular audio embedding
+                if embedder.mode == "audio":
+                    try:
                         emb = embedder.embed(audio_array, sr)
                         key = (embedder.model_name, embedder.mode)
                         accumulator[key]["embeddings"].append(emb)
                         accumulator[key]["segment_ids"].append(segment_id)
                         print(f"✅ Audio embed success {segment_id} with {embedder.model_name}")
-                        
-                    elif embedder.mode == "audio_denoised":
-                        # Denoised audio embedding - try all denoisers
-                        for denoiser_name, denoised in denoised_audio.items():
-                            try:
-                                emb = embedder.embed(denoised, sr)
-                                key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
-                                if key not in accumulator:
-                                    accumulator[key] = {"embeddings": [], "segment_ids": []}
-                                accumulator[key]["embeddings"].append(emb)
-                                accumulator[key]["segment_ids"].append(segment_id)
-                                print(f"✅ Denoised embed success {segment_id} with {embedder.model_name}_{denoiser_name}")
-                            except Exception as e:
-                                print(f"❌ Denoised embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
-                                
-                    elif embedder.mode == "audio_noise":
-                        # Noise audio embedding - try all denoisers
-                        for denoiser_name, noise in noise_audio.items():
-                            try:
-                                emb = embedder.embed(noise, sr)
-                                key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
-                                if key not in accumulator:
-                                    accumulator[key] = {"embeddings": [], "segment_ids": []}
-                                accumulator[key]["embeddings"].append(emb)
-                                accumulator[key]["segment_ids"].append(segment_id)
-                                print(f"✅ Noise embed success {segment_id} with {embedder.model_name}_{denoiser_name}")
-                            except Exception as e:
-                                print(f"❌ Noise embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
-                                
-                except Exception as e:
-                    print(f"❌ Audio embed fail {segment_id} with {embedder.model_name}: {e}")
+                    except Exception as e:
+                        print(f"❌ Audio embed fail {segment_id} with {embedder.model_name}: {e}")
+
+            # Process denoised audio embedders
+            for denoiser_name in DENOISERS.keys():
+                if denoiser_name in denoised_audio:
+                    # Create embedders for denoised audio
+                    hubert_denoised = HubertEmbedder(mode="audio_denoised")
+                    openl3_denoised = Openl3Embedder(mode="audio_denoised")
+                    
+                    for embedder in [hubert_denoised, openl3_denoised]:
+                        try:
+                            emb = embedder.embed(denoised_audio[denoiser_name], sr)
+                            key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
+                            accumulator[key]["embeddings"].append(emb)
+                            accumulator[key]["segment_ids"].append(segment_id)
+                            print(f"✅ Denoised embed success {segment_id} with {embedder.model_name}_{denoiser_name}")
+                        except Exception as e:
+                            print(f"❌ Denoised embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
+
+            # Process noise audio embedders
+            for denoiser_name in DENOISERS.keys():
+                if denoiser_name in noise_audio:
+                    # Create embedders for noise audio
+                    hubert_noise = HubertEmbedder(mode="audio_noise")
+                    openl3_noise = Openl3Embedder(mode="audio_noise")
+                    
+                    for embedder in [hubert_noise, openl3_noise]:
+                        try:
+                            emb = embedder.embed(noise_audio[denoiser_name], sr)
+                            key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
+                            accumulator[key]["embeddings"].append(emb)
+                            accumulator[key]["segment_ids"].append(segment_id)
+                            print(f"✅ Noise embed success {segment_id} with {embedder.model_name}_{denoiser_name}")
+                        except Exception as e:
+                            print(f"❌ Noise embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
 
             for embedder in VIDEO_EMBEDDERS:
                 try:
@@ -112,99 +130,99 @@ def embed_segments(segments):
 
     return accumulator
 
-def save_embeddings(accumulator, output_dir, created_at):
-    os.makedirs(output_dir, exist_ok=True)
+# def save_embeddings(accumulator, output_dir, created_at):
+#     os.makedirs(output_dir, exist_ok=True)
 
-    for (model, mode), data in accumulator.items():
-        if not data["embeddings"]:
-            continue
+#     for (model, mode), data in accumulator.items():
+#         if not data["embeddings"]:
+#             continue
 
-        embs = np.stack(data["embeddings"])
-        seg_ids = data["segment_ids"]
+#         embs = np.stack(data["embeddings"])
+#         seg_ids = data["segment_ids"]
 
-        # Create appropriate filename based on model and mode
-        if mode == "audio_denoised":
-            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
-            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
-            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
-        elif mode == "audio_noise":
-            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
-            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
-            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
-        else:
-            base = f"{model}_{mode}_{created_at}"
+#         # Create appropriate filename based on model and mode
+#         if mode == "audio_denoised":
+#             # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+#             denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+#             base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+#         elif mode == "audio_noise":
+#             # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+#             denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+#             base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+#         else:
+#             base = f"{model}_{mode}_{created_at}"
             
-        npy_path = os.path.join(output_dir, f"{base}.npy")
-        csv_path = os.path.join(output_dir, f"{base}.csv")
+#         npy_path = os.path.join(output_dir, f"{base}.npy")
+#         csv_path = os.path.join(output_dir, f"{base}.csv")
 
-        np.save(npy_path, embs)
-        with open(csv_path, "w") as f:
-            for sid in seg_ids:
-                f.write(sid + "\n")
+#         np.save(npy_path, embs)
+#         with open(csv_path, "w") as f:
+#             for sid in seg_ids:
+#                 f.write(sid + "\n")
 
-        print(f"✅ Saved: {npy_path} and {csv_path}")
+#         print(f"✅ Saved: {npy_path} and {csv_path}")
 
-def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
-    now = datetime.now(timezone.utc).isoformat()
+# def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
+#     now = datetime.now(timezone.utc).isoformat()
 
-    for (model, mode), data in accumulator.items():
-        if not data["embeddings"]:
-            continue
+#     for (model, mode), data in accumulator.items():
+#         if not data["embeddings"]:
+#             continue
 
-        # Create appropriate filename based on model and mode
-        if mode == "audio_denoised":
-            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
-            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
-            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
-        elif mode == "audio_noise":
-            # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
-            denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
-            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
-        else:
-            base = f"{model}_{mode}_{created_at}"
+#         # Create appropriate filename based on model and mode
+#         if mode == "audio_denoised":
+#             # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+#             denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+#             base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+#         elif mode == "audio_noise":
+#             # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
+#             denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
+#             base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+#         else:
+#             base = f"{model}_{mode}_{created_at}"
             
-        npy_path = os.path.join(output_dir, f"{base}.npy")
+#         npy_path = os.path.join(output_dir, f"{base}.npy")
 
-        for sid in data["segment_ids"]:
-            embedding_dict = {
-                "embedding_id": str(uuid.uuid4()),
-                "segment_id": sid,
-                "mode": mode,
-                "model_name": model,
-                "embedding_type": "raw",
-                "reducer_id": None,
-                "contraster_id": None,
-                "embedding_path": npy_path,
-                "created_at": now
-            }
-            insert_embedding(db_path, embedding_dict)
+#         for sid in data["segment_ids"]:
+#             embedding_dict = {
+#                 "embedding_id": str(uuid.uuid4()),
+#                 "segment_id": sid,
+#                 "mode": mode,
+#                 "model_name": model,
+#                 "embedding_type": "raw",
+#                 "reducer_id": None,
+#                 "contraster_id": None,
+#                 "embedding_path": npy_path,
+#                 "created_at": now
+#             }
+#             insert_embedding(db_path, embedding_dict)
 
-    print("✅ Inserted embeddings into DB.")
+#     print("✅ Inserted embeddings into DB.")
 
-def create_faiss_index_and_upload(output_dir, dim=512, dropbox_path="/faiss_index/"):
+# def create_faiss_index_and_upload(output_dir, dim=512, dropbox_path="/faiss_index/"):
 
-    from utils.config_loader import load_config
+#     from utils.config_loader import load_config
 
-    config = load_config()
-    access_token = config["dropbox"]["access_token"]
+#     config = load_config()
+#     access_token = config["dropbox"]["access_token"]
 
-    for fname in os.listdir(output_dir):
-        if fname.endswith(".npy"):
-            npy_path = os.path.join(output_dir, fname)
-            embs = np.load(npy_path)
+#     for fname in os.listdir(output_dir):
+#         if fname.endswith(".npy"):
+#             npy_path = os.path.join(output_dir, fname)
+#             embs = np.load(npy_path)
 
-            index = faiss.IndexFlatL2(embs.shape[1] if dim is None else dim)
-            index.add(embs)
+#             index = faiss.IndexFlatL2(embs.shape[1] if dim is None else dim)
+#             index.add(embs)
 
-            faiss_path = npy_path.replace(".npy", ".faiss")
-            faiss.write_index(index, faiss_path)
-            print(f"✅ FAISS index written: {faiss_path}")
+#             faiss_path = npy_path.replace(".npy", ".faiss")
+#             faiss.write_index(index, faiss_path)
+#             print(f"✅ FAISS index written: {faiss_path}")
 
-            # Upload to Dropbox
-            dbx = dropbox.Dropbox(access_token)
-            with open(faiss_path, "rb") as f:
-                dbx.files_upload(f.read(), dropbox_path + os.path.basename(faiss_path), mode=dropbox.files.WriteMode.overwrite)
-                print(f"☁️ Uploaded to Dropbox: {dropbox_path + os.path.basename(faiss_path)}")
+#             # Upload to Dropbox
+#             dbx = dropbox.Dropbox(access_token)
+#             with open(faiss_path, "rb") as f:
+#                 dbx.files_upload(f.read(), dropbox_path + os.path.basename(faiss_path), mode=dropbox.files.WriteMode.overwrite)
+#                 print(f"☁️ Uploaded to Dropbox: {dropbox_path + os.path.basename(faiss_path)}")
 
 
 def main():
