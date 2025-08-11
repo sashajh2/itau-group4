@@ -118,13 +118,20 @@ def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
         with open(mapping_path, 'r') as f:
             mapping = json.load(f)
         
+        # Debug: Print what we're working with
+        print(f"🔍 Debug {model}_{mode}:")
+        print(f"  - Accumulator segment_ids count: {len(data['segment_ids'])}")
+        print(f"  - Mapping index_to_embedding_id count: {len(mapping['index_to_embedding_id'])}")
+        print(f"  - First few accumulator segment_ids: {data['segment_ids'][:3]}")
+        print(f"  - First few mapping indices: {list(mapping['index_to_embedding_id'].keys())[:3]}")
+        
         embedding_id_to_segment = {
             mapping["embedding_id_to_index"][emb_id]: seg_id 
             for seg_id, emb_id in mapping["segment_to_embedding_id"].items()
         }
 
         for idx, sid in enumerate(data["segment_ids"]):
-            embedding_id = mapping["index_to_embedding_id"][idx]
+            embedding_id = mapping["index_to_embedding_id"][str(idx)]
             
             embedding_dict = {
                 "embedding_id": embedding_id,

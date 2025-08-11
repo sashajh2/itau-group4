@@ -21,10 +21,20 @@ def check_dropbox_file_exists(dbx, dropbox_path):
         dbx.files_get_metadata(dropbox_path)
         return True
     except dropbox.exceptions.ApiError as e:
-        if e.error.is_not_found():
+        # Check if the error is "not found"
+        if hasattr(e.error, 'is_not_found') and e.error.is_not_found():
+            return False
+        elif hasattr(e.error, 'get_lookup_error') and e.error.get_lookup_error().is_not_found():
+            return False
+        elif hasattr(e.error, 'get_lookup_error') and hasattr(e.error.get_lookup_error(), 'is_not_found') and e.error.get_lookup_error().is_not_found():
             return False
         else:
-            raise e
+            # For now, let's just check if the error message contains "not_found"
+            error_str = str(e.error)
+            if "not_found" in error_str.lower():
+                return False
+            else:
+                raise e
 
 def download_and_merge_faiss_index(dbx, dropbox_index_path, new_embeddings, new_mapping):
     """
