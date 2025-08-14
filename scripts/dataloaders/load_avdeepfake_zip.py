@@ -7,7 +7,7 @@ HF_TOKEN = config['huggingface']['token']
 
 # Set the local output directory
 LOCAL_DIR = "./data/temp_video_extracted/AV1M"
-ZIP_FILE = os.path.join(LOCAL_DIR, "train/train.zip.003")
+ZIP_FILE = os.path.join(LOCAL_DIR, "train/train.zip.001")
 
 # Set token as environment variable
 os.environ["HF_TOKEN"] = HF_TOKEN
