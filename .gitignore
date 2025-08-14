@@ -17,6 +17,10 @@ credentials.json
 # Ignore temporary data storage
 data/temp_video_extracted/
 data/faiss_indexes/
+
+# Ignore pretrained model weights
+models/pretrained/senet/senet50_ft_weight.pkl
+
 # Project-specific ignores
 *.index
 *.tar
