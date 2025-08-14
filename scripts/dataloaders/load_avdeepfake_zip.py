@@ -20,7 +20,7 @@ subprocess.run([
 # Download the .zip.001 file
 subprocess.run([
     "huggingface-cli", "download", "ControlNet/AV-Deepfake1M-PlusPlus",
-    "train/train.zip.003", "--repo-type", "dataset", "--local-dir", LOCAL_DIR
+    "train/train.zip.001", "--repo-type", "dataset", "--local-dir", LOCAL_DIR
 ])
 
 # Extract using 7z (make sure 7z is installed)
