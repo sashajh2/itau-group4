@@ -5,7 +5,7 @@ import json
 import random
 import sqlite3
 import pandas as pd
-from utils.video_helpers import get_video_duration, sample_real_segment
+from utils.embedding_utils import get_video_duration, sample_real_segment
 from utils.config_loader import load_config
 
 def load_video_metadata(base_dir: str) -> pd.DataFrame:
