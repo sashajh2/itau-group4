@@ -6,7 +6,8 @@ import pickle
 import numpy as np
 from facenet_pytorch import MTCNN
 from moviepy import VideoFileClip
-from dropbox.dropbox_utils import download_file
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from dropbox_utils.dropbox_utils import download_file
 
 class SenetEmbedder:
     def __init__(self):
