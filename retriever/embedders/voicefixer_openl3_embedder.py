@@ -5,7 +5,7 @@ import soundfile as sf
 import librosa
 import torch
 from voicefixer import VoiceFixer
-import openl3
+#import openl3
 
 class VoicefixerOpenl3Embedder:
     def __init__(self):

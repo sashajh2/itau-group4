@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from demucs.pretrained import get_model
 from demucs.apply import apply_model
-import openl3
+#import openl3
 
 class DemucsOpenl3Embedder:
     def __init__(self):
