@@ -20,10 +20,16 @@ def main():
         print(f"\n===== Processing part {part_str} =====")
 
         # Step 1: Download and extract this part
-        zip_path, part_out_dir = download_and_extract_part(
+        zip_path, part_out_dir, log_path = download_and_extract_part(
             part=part_str,
             local_dir=args.base_dir,
         )
+
+        # Print statements verifying step 1 is done
+        print(f"ZIP_PATH={zip_path}")
+        print(f"EXTRACTED_PART_DIR={part_out_dir}")
+        if log_path:
+            print(f"EXTRACTION_LOG={log_path}")
 
         # Where files are extracted
         extracted_part_dir = os.path.join(args.base_dir, "extracted", f"part_{part_str}")
