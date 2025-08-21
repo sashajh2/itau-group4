@@ -42,60 +42,7 @@ def _extract_zip(zip_file: str, out_dir: str) -> tuple[str, str]:
     return out_dir, combined
 
 
-# def _is_video_valid_ffprobe(video_path: str) -> bool:
-#     try:
-#         proc = subprocess.run(
-#             [
-#                 "ffprobe", "-v", "error", "-show_format", "-show_streams",
-#                 "-of", "default=noprint_wrappers=1", video_path
-#             ],
-#             stdout=subprocess.PIPE,
-#             stderr=subprocess.PIPE,
-#             check=False,
-#         )
-#         return proc.returncode == 0
-#     except FileNotFoundError:
-#         # ffprobe not installed; fallback to best-effort True
-#         return True
-
-
-# def _scan_and_remove_corrupted_files(extracted_root: str) -> int:
-#     removed = 0
-#     for root, _, files in os.walk(extracted_root):
-#         for file in files:
-#             if not file.endswith(".mp4"):
-#                 continue
-#             mp4_path = os.path.join(root, file)
-#             json_path = mp4_path.replace(".mp4", ".json")
-
-#             # JSON must exist and be valid
-#             json_ok = True
-#             if not os.path.exists(json_path):
-#                 json_ok = False
-#             else:
-#                 try:
-#                     with open(json_path, "r") as f:
-#                         json.load(f)
-#                 except Exception:
-#                     json_ok = False
-
-#             video_ok = _is_video_valid_ffprobe(mp4_path)
-
-#             if not (json_ok and video_ok):
-#                 try:
-#                     if os.path.exists(mp4_path):
-#                         os.remove(mp4_path)
-#                 finally:
-#                     if os.path.exists(json_path):
-#                         try:
-#                             os.remove(json_path)
-#                         except Exception:
-#                             pass
-#                 removed += 1
-#     return removed
-
-
-def download_and_extract_part(part: str, local_dir: str = "./data/temp_video_extracted/AV1M", scan_delete_corrupted: bool = False) -> tuple[str, str, str]:
+def download_and_extract_part(part: str, local_dir: str = "./data/temp_video_extracted/AV1M") -> tuple[str, str, str]:
     """
     Download and extract a specific AV-Deepfake1M zip part.
 
@@ -160,7 +107,6 @@ def main():
     zip_path, part_out_dir, log_path = download_and_extract_part(
         part=args.part,
         local_dir=args.local_dir,
-        scan_delete_corrupted=args.scan_delete_corrupted,
     )
 
     print(f"✅ Downloaded and extracted part {str(args.part).zfill(3)}")

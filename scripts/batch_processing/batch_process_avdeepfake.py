@@ -13,7 +13,6 @@ def main():
     parser.add_argument("--start", type=int, default=2, help="Start part (inclusive), e.g., 2 for 002")
     parser.add_argument("--end", type=int, default=50, help="End part (inclusive), e.g., 50 for 050")
     parser.add_argument("--base-dir", type=str, default="./data/temp_video_extracted/AV1M", help="Base local dir for downloads")
-    parser.add_argument("--scan-delete-corrupted", action="store_true", help="Scan and delete corrupted files after extraction")
     args = parser.parse_args()
 
     for part in range(args.start, args.end + 1):
@@ -24,7 +23,6 @@ def main():
         zip_path, part_out_dir = download_and_extract_part(
             part=part_str,
             local_dir=args.base_dir,
-            scan_delete_corrupted=args.scan_delete_corrupted,
         )
 
         # Where files are extracted
