@@ -89,6 +89,29 @@ def main():
     ok = same_dim and (mean_dist < 4.0)
     print(f"PASS: {ok}")
 
+    # Diagnostics: print first 10 elements of first 10 vectors from both sources
+    preview_n = min(10, n_local, n_index)
+    if preview_n > 0:
+        print("\nLocal preview (first 10 elements of first 10 vectors):")
+        local_preview = local_embs[:preview_n, :10]
+        np.set_printoptions(suppress=True, precision=4)
+        print(local_preview)
+
+        print("\nIndex preview (first 10 elements of first 10 vectors):")
+        index_preview = np.zeros((preview_n, dim), dtype=np.float32)
+        # reconstruct first `preview_n` vectors if supported
+        try:
+            for i in range(preview_n):
+                index_preview[i] = faiss_index.reconstruct(i)
+        except Exception:
+            # Fallback: query the index with one-hot like approach by searching each vector to itself if possible
+            # but without raw access, skip deep preview
+            print("Index does not support reconstruct(); raw vector preview unavailable.")
+            index_preview = None
+
+        if index_preview is not None:
+            print(index_preview[:, :10])
+
 
 if __name__ == "__main__":
     main()
