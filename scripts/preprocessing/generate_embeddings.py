@@ -1,8 +1,11 @@
 from db.embedding_store_utils import get_segments_by_created_at
 from utils.config_loader import load_config
-from embedding_generator import embed_segments
-from embedding_saver import save_embeddings_to_files, insert_embeddings_to_db
-from dropbox_uploader import create_faiss_index_and_upload
+from scripts.preprocessing.embedding_generator import embed_segments
+from scripts.preprocessing.embedding_saver import (
+    save_embeddings_to_files,
+    insert_embeddings_to_db,
+)
+from scripts.preprocessing.dropbox_uploader import create_faiss_index_and_upload
 import argparse
 import os
 
