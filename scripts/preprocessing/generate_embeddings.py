@@ -3,16 +3,21 @@ from utils.config_loader import load_config
 from embedding_generator import embed_segments
 from embedding_saver import save_embeddings_to_files, insert_embeddings_to_db
 from dropbox_uploader import create_faiss_index_and_upload
+import argparse
 import os
 
 def main():
+    parser = argparse.ArgumentParser(description="Generate embeddings for segments with a specific created_at")
+    parser.add_argument("--created-at", type=str, required=True, help="ISO8601 created_at partition to process")
+    parser.add_argument("--output-dir", type=str, default="./embeddings/generated", help="Directory to save embeddings")
+    args = parser.parse_args()
+
     config = load_config()
     db_path = config["database"]["embedding_db_path"]
-    
-    # Configuration
-    created_at = "2025-07-31T16:46:45.022260"
-    output_dir = "./embeddings/generated"
-    
+
+    created_at = args.created_at
+    output_dir = args.output_dir
+
     print(f"Getting segments for {created_at}")
     segments = get_segments_by_created_at(db_path, created_at)
     print(f"Found {len(segments)} segments")
