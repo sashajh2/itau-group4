@@ -162,6 +162,21 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
     conn.commit()
     conn.close()
 
+
+def extract_and_insert_segments(video_root: str, created_at: str) -> int:
+    """
+    Extract segments from a video root and insert into DB using provided created_at.
+
+    Returns number of segments inserted.
+    """
+    config = load_config()
+    db_path = config["database"]["embedding_db_path"]
+
+    metadata_df = load_video_metadata(video_root)
+    segment_df = generate_segment_metadata(metadata_df)
+    insert_segments_to_sqlite(segment_df, db_path, created_at)
+    return len(segment_df)
+
 def main():
     parser = argparse.ArgumentParser(description="Extract segments and insert into SQLite with created_at")
     parser.add_argument("--video-root", type=str, default="./data/temp_video_extracted/AV1M/extracted/train/lrs3", help="Root folder containing extracted videos")

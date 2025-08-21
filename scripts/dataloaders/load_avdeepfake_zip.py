@@ -83,6 +83,28 @@ def _scan_and_remove_corrupted_files(extracted_root: str) -> int:
     return removed
 
 
+def download_and_extract_part(part: str, local_dir: str = "./data/temp_video_extracted/AV1M", scan_delete_corrupted: bool = False) -> tuple[str, str]:
+    """
+    Download and extract a specific AV-Deepfake1M zip part.
+
+    Returns (zip_path, extracted_part_dir)
+    """
+    config = load_config()
+    token = config["huggingface"]["token"]
+
+    part_str = str(part).zfill(3)
+    zip_path = _download_zip_part(local_dir, part_str, token)
+    part_out_dir = os.path.join(local_dir, "extracted", f"part_{part_str}")
+    _extract_zip(zip_path, part_out_dir)
+
+    if scan_delete_corrupted:
+        lrs3_root = os.path.join(part_out_dir, "train", "lrs3")
+        if os.path.exists(lrs3_root):
+            _scan_and_remove_corrupted_files(lrs3_root)
+
+    return zip_path, part_out_dir
+
+
 def main():
     parser = argparse.ArgumentParser(description="Download and extract a specific AV-Deepfake1M zip part")
     parser.add_argument("--part", type=str, required=True, help="Three-digit part number, e.g., 002")
@@ -90,29 +112,13 @@ def main():
     parser.add_argument("--scan-delete-corrupted", action="store_true", help="Scan extracted videos and delete corrupted pairs")
     args = parser.parse_args()
 
-    config = load_config()
-    token = config["huggingface"]["token"]
+    zip_path, part_out_dir = download_and_extract_part(
+        part=args.part,
+        local_dir=args.local_dir,
+        scan_delete_corrupted=args.scan_delete_corrupted,
+    )
 
-    # Normalize part to 3 digits
-    part_str = str(args.part).zfill(3)
-
-    # Download
-    zip_path = _download_zip_part(args.local_dir, part_str, token)
-
-    # Extract to unique part dir
-    part_out_dir = os.path.join(args.local_dir, "extracted", f"part_{part_str}")
-    _extract_zip(zip_path, part_out_dir)
-
-    # Optional: scan and delete corrupted
-    if args.scan_delete_corrupted:
-        lrs3_root = os.path.join(part_out_dir, "train", "lrs3")
-        if os.path.exists(lrs3_root):
-            removed = _scan_and_remove_corrupted_files(lrs3_root)
-            print(f"🧹 Removed {removed} corrupted video/json pairs in {lrs3_root}")
-        else:
-            print(f"⚠️ lrs3 root not found at {lrs3_root}")
-
-    print(f"✅ Downloaded and extracted part {part_str}")
+    print(f"✅ Downloaded and extracted part {str(args.part).zfill(3)}")
     print(f"ZIP_PATH={zip_path}")
     print(f"EXTRACTED_PART_DIR={part_out_dir}")
 

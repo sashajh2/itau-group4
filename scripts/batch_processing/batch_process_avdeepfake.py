@@ -1,14 +1,11 @@
 import argparse
 import os
 import shutil
-import subprocess
 from datetime import datetime, timezone
 
-
-def run(cmd: list[str]) -> None:
-    cmd = [c for c in cmd if c != ""]
-    print("$", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+from scripts.dataloaders.load_avdeepfake_zip import download_and_extract_part
+from scripts.preprocessing.extract_segments import extract_and_insert_segments
+from scripts.preprocessing.generate_embeddings import generate_for_created_at
 
 
 def main():
@@ -24,12 +21,11 @@ def main():
         print(f"\n===== Processing part {part_str} =====")
 
         # Step 1: Download and extract this part
-        run([
-            "python3", "scripts/dataloaders/load_avdeepfake_zip.py",
-            "--part", part_str,
-            "--local-dir", args.base_dir,
-            "--scan-delete-corrupted" if args.scan_delete_corrupted else ""
-        ])
+        zip_path, part_out_dir = download_and_extract_part(
+            part=part_str,
+            local_dir=args.base_dir,
+            scan_delete_corrupted=args.scan_delete_corrupted,
+        )
 
         # Where files are extracted
         extracted_part_dir = os.path.join(args.base_dir, "extracted", f"part_{part_str}")
@@ -37,18 +33,12 @@ def main():
 
         # Step 2: Extract segments into DB with a shared created_at for this part
         created_at = datetime.now(timezone.utc).isoformat()
-        run([
-            "python3", "scripts/preprocessing/extract_segments.py",
-            "--video-root", lrs3_root,
-            "--created-at", created_at,
-        ])
+        num_segments = extract_and_insert_segments(lrs3_root, created_at)
+        print(f"Inserted {num_segments} segments for part {part_str}")
 
         # Step 3: Generate embeddings for this created_at; Dropbox appends if exists
-        run([
-            "python3", "scripts/preprocessing/generate_embeddings.py",
-            "--created-at", created_at,
-            "--output-dir", "./embeddings/generated",
-        ])
+        num_segments_processed, num_uploaded = generate_for_created_at(created_at, "./embeddings/generated")
+        print(f"Embeddings: processed={num_segments_processed}, uploaded_indices={num_uploaded}")
 
         # Step 4: Clean up local zip and extracted directory for this part
         zip_file = os.path.join(args.base_dir, "train", f"train.zip.{part_str}")
