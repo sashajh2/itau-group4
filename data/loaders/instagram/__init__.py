@@ -1,4 +1,4 @@
-# Data loaders package
+# Instagram loader package
 
 from .instagram import scrape_public_account, scrape_multiple_accounts
 

@@ -24,3 +24,5 @@ demucs
 soundfile
 facenet-pytorch
 opencv-python
+# Instagram scraping
+instaloader
