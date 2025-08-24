@@ -1,28 +1,121 @@
 import os
+import argparse
 import subprocess
+import json
+import re
+from typing import Optional
 from utils.config_loader import load_config
 
-config = load_config()
-HF_TOKEN = config['huggingface']['token']
 
-# Set the local output directory
-LOCAL_DIR = "./data/temp_video_extracted/AV1M"
-ZIP_FILE = os.path.join(LOCAL_DIR, "train/train.zip.001")
+def _ensure_hf_login(token: str) -> None:
+    # Login to Hugging Face (skip if already logged in)
+    subprocess.run(["huggingface-cli", "login", "--token", token], check=False)
 
-# Set token as environment variable
-os.environ["HF_TOKEN"] = HF_TOKEN
 
-# Login to Hugging Face (skip if already logged in)
-subprocess.run([
-    "huggingface-cli", "login", "--token", HF_TOKEN
-])
+def _download_zip_part(local_dir: str, part_str: str, token: str) -> str:
+    os.makedirs(local_dir, exist_ok=True)
+    os.environ["HF_TOKEN"] = token
+    _ensure_hf_login(token)
 
-# Download the .zip.001 file
-subprocess.run([
-    "huggingface-cli", "download", "ControlNet/AV-Deepfake1M-PlusPlus",
-    "train/train.zip.001", "--repo-type", "dataset", "--local-dir", LOCAL_DIR
-])
+    zip_rel_path = f"train/train.zip.{part_str}"
+    subprocess.run([
+        "huggingface-cli", "download", "ControlNet/AV-Deepfake1M-PlusPlus",
+        zip_rel_path, "--repo-type", "dataset", "--local-dir", local_dir
+    ], check=True)
+    return os.path.join(local_dir, zip_rel_path)
 
-# Extract using 7z (make sure 7z is installed)
-subprocess.run(["7z", "x", ZIP_FILE, f"-o{LOCAL_DIR}/extracted"])
+
+def _extract_zip(zip_file: str, out_dir: str) -> tuple[str, str]:
+    """
+    Extract zip using 7z and capture stdout/stderr.
+
+    Returns (out_dir, combined_output)
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    proc = subprocess.run(
+        ["7z", "x", zip_file, f"-o{out_dir}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    return out_dir, combined
+
+
+def download_and_extract_part(part: str, local_dir: str = "./data/temp_video_extracted/AV1M") -> tuple[str, str, str]:
+    """
+    Download and extract a specific AV-Deepfake1M zip part.
+
+    Returns (zip_path, extracted_part_dir)
+    """
+    config = load_config()
+    token = config["huggingface"]["token"]
+
+    part_str = str(part).zfill(3)
+    zip_path = _download_zip_part(local_dir, part_str, token)
+    part_out_dir = os.path.join(local_dir, "extracted", f"part_{part_str}")
+    part_out_dir, extract_output = _extract_zip(zip_path, part_out_dir)
+
+    # Save extraction log for inspection/parsing
+    log_path = os.path.join(part_out_dir, "extraction_log.txt")
+    try:
+        with open(log_path, "w") as f:
+            f.write(extract_output)
+    except Exception:
+        log_path = ""
+
+    # Parse extraction output to find corrupted files and delete them with paired JSON
+    # Looks for lines like: "ERROR: Data Error : train/.../file.mp4"
+    corrupted_rel_paths: set[str] = set()
+    for line in extract_output.splitlines():
+        if "ERROR" in line and ".mp4" in line:
+            m = re.search(r"ERROR: .*?:\s+(.+?\.mp4)\s*$", line)
+            if m:
+                corrupted_rel_paths.add(m.group(1).strip())
+
+    removed_count = 0
+    for rel_path in corrupted_rel_paths:
+        abs_mp4 = os.path.join(part_out_dir, rel_path)
+        abs_json = abs_mp4.replace(".mp4", ".json")
+        try:
+            if os.path.exists(abs_mp4):
+                os.remove(abs_mp4)
+                print(f"🧹 Removed corrupted video: {abs_mp4}")
+        except Exception as e:
+            print(f"⚠️ Failed to remove {abs_mp4}: {e}")
+        try:
+            if os.path.exists(abs_json):
+                os.remove(abs_json)
+                print(f"🧹 Removed paired JSON: {abs_json}")
+        except Exception as e:
+            print(f"⚠️ Failed to remove {abs_json}: {e}")
+        removed_count += 1
+
+    if removed_count > 0:
+        print(f"✅ Cleaned {removed_count} corrupted entries reported by 7z")
+
+    return zip_path, part_out_dir, log_path
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Download and extract a specific AV-Deepfake1M zip part")
+    parser.add_argument("--part", type=str, required=True, help="Three-digit part number, e.g., 002")
+    parser.add_argument("--local-dir", type=str, default="./data/temp_video_extracted/AV1M", help="Base local directory")
+    parser.add_argument("--scan-delete-corrupted", action="store_true", help="Scan extracted videos and delete corrupted pairs")
+    args = parser.parse_args()
+
+    zip_path, part_out_dir, log_path = download_and_extract_part(
+        part=args.part,
+        local_dir=args.local_dir,
+    )
+
+    print(f"✅ Downloaded and extracted part {str(args.part).zfill(3)}")
+    print(f"ZIP_PATH={zip_path}")
+    print(f"EXTRACTED_PART_DIR={part_out_dir}")
+    if log_path:
+        print(f"EXTRACTION_LOG={log_path}")
+
+
+if __name__ == "__main__":
+    main()
 

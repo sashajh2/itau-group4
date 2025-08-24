@@ -1,9 +1,10 @@
 #Reads videos (e.g., from .tar), extracts segments, and creates metadata entries in your database.
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import json
 import random
 import sqlite3
+import argparse
 import pandas as pd
 from utils.embedding_utils import get_video_duration, sample_real_segment
 from utils.config_loader import load_config
@@ -126,11 +127,9 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
 
     return pd.DataFrame(segment_rows)
 
-def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
+def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, created_at: str):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-
-    created_at = datetime.utcnow().isoformat()
 
     for _, row in segment_metadata_df.iterrows():
         video_path_parts = row['video_path'].split('/')
@@ -163,13 +162,34 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str):
     conn.commit()
     conn.close()
 
-def main():
-    video_root = "./data/temp_video_extracted/AV1M/extracted/train/lrs3"
+
+def extract_and_insert_segments(video_root: str, created_at: str) -> int:
+    """
+    Extract segments from a video root and insert into DB using provided created_at.
+
+    Returns number of segments inserted.
+    """
     config = load_config()
     db_path = config["database"]["embedding_db_path"]
 
-    print("Loading video metadata...")
     metadata_df = load_video_metadata(video_root)
+    segment_df = generate_segment_metadata(metadata_df)
+    insert_segments_to_sqlite(segment_df, db_path, created_at)
+    return len(segment_df)
+
+def main():
+    parser = argparse.ArgumentParser(description="Extract segments and insert into SQLite with created_at")
+    parser.add_argument("--video-root", type=str, default="./data/temp_video_extracted/AV1M/extracted/train/lrs3", help="Root folder containing extracted videos")
+    parser.add_argument("--created-at", type=str, default=None, help="ISO8601 timestamp to tag inserted segments")
+    args = parser.parse_args()
+
+    config = load_config()
+    db_path = config["database"]["embedding_db_path"]
+
+    created_at = args.created_at or datetime.now(timezone.utc).isoformat()
+
+    print("Loading video metadata...")
+    metadata_df = load_video_metadata(args.video_root)
     print("Video metadata loaded:")
     print(f"Total videos: {len(metadata_df)}")
 
@@ -178,9 +198,10 @@ def main():
     print("Segment metadata generated:")
     print(f"Total segments: {len(segment_df)}")
 
-    print(f"Inserting {len(segment_df)} segments into the database...")
-    insert_segments_to_sqlite(segment_df, db_path)
+    print(f"Inserting {len(segment_df)} segments into the database with created_at={created_at}...")
+    insert_segments_to_sqlite(segment_df, db_path, created_at)
     print("Done!")
+    print(f"CREATED_AT={created_at}")
 
 
 if __name__ == "__main__":
