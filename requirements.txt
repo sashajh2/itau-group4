@@ -26,3 +26,5 @@ facenet-pytorch
 opencv-python
 # Instagram scraping
 instaloader
+# Hugging Face Hub for dataset downloads
+huggingface_hub[hf_xet]
