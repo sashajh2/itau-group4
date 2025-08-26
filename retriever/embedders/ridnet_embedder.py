@@ -85,8 +85,21 @@ class RidnetEmbedder:
 
             return padded
 
-    def get_video_face_noise(self, video: str) -> str:
-        pass  # Change this to get numpy arrays not strings3
+    def get_video_face_noise(self, video_path: str, start_time: float, end_time: float):
+        embeddings = []
+        for frame in extract_three_frames(video_path, start_time, end_time):
+            try:
+                face = self.isolate_face(frame)
+                noise = face - self.denoise(face)
+                emb = noise.flatten()
+                embeddings.append(emb)
+
+            except Exception as e:
+                print(f"Skipping frame due to error: {e}")
+                continue
+
+        mean_emb = np.mean(embeddings, axis=0)
+        return mean_emb
 
     # def embed(self, video: str, num_components: int = 128) -> np.ndarray:
     #     NOT SURE WE REALLY NEED THIS
