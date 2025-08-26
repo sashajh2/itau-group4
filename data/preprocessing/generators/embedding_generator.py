@@ -46,21 +46,31 @@ def embed_segments(segments):
             audio = video.audio
             sr = audio.fps
             audio_array = get_audio_array(audio, sr)
+            
+            # Create 16kHz audio array specifically for Hubert (which expects 16kHz)
+            audio_array_16k = get_audio_array(audio, 16000)
 
             # Process audio with denoisers to get noised and denoised versions
             denoised_audio = {}
             noise_audio = {}
+            denoised_audio_16k = {}
+            noise_audio_16k = {}
             
             for denoiser_name, denoiser in DENOISERS.items():
                 try:
                     # Use the new split_audio function for efficiency
                     if denoiser_name == "voicefixer":
                         denoised, noise = denoiser.split_audio(audio_array, sr=sr)
+                        denoised_16k, noise_16k = denoiser.split_audio(audio_array_16k, sr=16000)
                     else:
                         denoised, noise = denoiser.split_audio(audio_array)
+                        denoised_16k, noise_16k = denoiser.split_audio(audio_array_16k)
                     
                     denoised_audio[denoiser_name] = denoised
                     noise_audio[denoiser_name] = noise
+
+                    denoised_audio_16k[denoiser_name] = denoised_16k
+                    noise_audio_16k[denoiser_name] = noise_16k
                 except Exception as e:
                     print(f"❌ Denoising fail with {denoiser_name} for {segment_id}: {e}")
 
@@ -68,7 +78,11 @@ def embed_segments(segments):
             for embedder in AUDIO_EMBEDDERS:
                 if embedder.mode == "audio":
                     try:
-                        emb = embedder.embed(audio_array, sr)
+                        # For Hubert, use 16kHz audio array; for others, use original audio_array
+                        if embedder.model_name == "hubert":
+                            emb = embedder.embed(audio_array_16k, 16000)
+                        else:
+                            emb = embedder.embed(audio_array, sr)
                         key = (embedder.model_name, embedder.mode)
                         accumulator[key]["embeddings"].append(emb)
                         accumulator[key]["segment_ids"].append(segment_id)
@@ -84,7 +98,11 @@ def embed_segments(segments):
                     
                     for embedder in [hubert_denoised, openl3_denoised]:
                         try:
-                            emb = embedder.embed(denoised_audio[denoiser_name], sr)
+                            # For Hubert, use 16kHz denoised audio; for others, use original
+                            if embedder.model_name == "hubert":
+                                emb = embedder.embed(denoised_audio_16k[denoiser_name], 16000)
+                            else:
+                                emb = embedder.embed(denoised_audio[denoiser_name], sr)
                             key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
                             accumulator[key]["embeddings"].append(emb)
                             accumulator[key]["segment_ids"].append(segment_id)
@@ -100,7 +118,11 @@ def embed_segments(segments):
                     
                     for embedder in [hubert_noise, openl3_noise]:
                         try:
-                            emb = embedder.embed(noise_audio[denoiser_name], sr)
+                            # For Hubert, use 16kHz noise audio; for others, use original
+                            if embedder.model_name == "hubert":
+                                emb = embedder.embed(noise_audio_16k[denoiser_name], 16000)
+                            else:
+                                emb = embedder.embed(noise_audio[denoiser_name], sr)
                             key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
                             accumulator[key]["embeddings"].append(emb)
                             accumulator[key]["segment_ids"].append(segment_id)
