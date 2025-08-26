@@ -2,9 +2,9 @@ import numpy as np
 import openl3
 
 class Openl3Embedder:
-    def __init__(self):
+    def __init__(self, mode="audio"):
         self.model_name = "openl3"
-        self.mode = "audio"
+        self.mode = mode  # "audio", "audio_noise", "audio_denoised"
 
     def embed(self, audio_array: np.ndarray, sr: int) -> np.ndarray:
         clip_duration = audio_array.shape[0] / sr

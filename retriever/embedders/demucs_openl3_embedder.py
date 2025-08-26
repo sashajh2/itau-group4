@@ -16,8 +16,6 @@ class DemucsOpenl3Embedder:
         return model
 
     def denoise_with_demucs(self, audio_array: np.ndarray) -> np.ndarray:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.demucs_model.to(device)
 
         audio_tensor = torch.tensor(audio_array, dtype=torch.float32)
         if audio_tensor.ndim == 1:
@@ -25,12 +23,12 @@ class DemucsOpenl3Embedder:
         elif audio_tensor.shape[0] == 1:
             audio_tensor = audio_tensor.repeat(2, 1)
 
-        wav = audio_tensor.unsqueeze(0).to(device)  # [1, 2, T]
+        wav = audio_tensor.unsqueeze(0)  # [1, 2, T]
 
         with torch.no_grad():
-            sources = apply_model(self.demucs_model, wav, split=True, overlap=0.25, progress=False)
+            sources = apply_model(self.model, wav, split=True, overlap=0.25, progress=False)
 
-        sources = sources.cpu().numpy()[0]
+        sources = sources.numpy()[0]
         denoised = sources[3]  # vocals
         return denoised.flatten()
     

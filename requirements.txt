@@ -21,3 +21,10 @@ dropbox
 faiss-cpu
 huggingface_hub
 tqdm
+voicefixer
+demucs
+soundfile
+facenet-pytorch
+opencv-python
+# Instagram scraping
+instaloader

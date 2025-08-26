@@ -1,164 +1,66 @@
-from retriever.embedders import AUDIO_EMBEDDERS, VIDEO_EMBEDDERS
-from db.embedding_store_utils import get_segments_by_created_at, insert_embedding
+from db.embedding_store_utils import get_segments_by_created_at
 from utils.config_loader import load_config
-import numpy as np
+from scripts.preprocessing.embedding_generator import embed_segments
+from scripts.preprocessing.embedding_saver import (
+    save_embeddings_to_files,
+    insert_embeddings_to_db,
+)
+from scripts.preprocessing.dropbox_uploader import create_faiss_index_and_upload
+import argparse
 import os
-import uuid
-from datetime import datetime
-from moviepy import VideoFileClip
-from utils.embedding_utils import get_audio_array
-import faiss
-import dropbox
 
-def embed_segments(segments):
-    accumulator = {
-        (e.model_name, e.mode): {"embeddings": [], "segment_ids": []}
-        for e in AUDIO_EMBEDDERS + VIDEO_EMBEDDERS
-    }
+def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/generated") -> tuple[int, int]:
+    """
+    Generate embeddings for all segments with the given created_at.
 
-    for segment in segments:
-        segment_id = segment["segment_id"]
-        filepath = segment["video_path"]
-        start_time = segment["start_time"]
-        duration = segment["duration"]
-
-        try:
-            video = VideoFileClip(filepath).subclip(start_time, start_time + duration)
-            audio = video.audio
-            sr = audio.fps
-            audio_array = get_audio_array(audio, sr)
-
-            for embedder in AUDIO_EMBEDDERS:
-                try:
-                    temp_audio = (
-                        embedder.get_audio_noise(audio_array)
-                        if embedder.mode == "audio noise"
-                        else audio_array
-                    )
-                    emb = embedder.embed(temp_audio, sr)
-                    key = (embedder.model_name, embedder.mode)
-                    accumulator[key]["embeddings"].append(emb)
-                    accumulator[key]["segment_ids"].append(segment_id)
-                except Exception as e:
-                    print(f"❌ Audio embed fail {segment_id} with {embedder.model_name}: {e}")
-
-            for embedder in VIDEO_EMBEDDERS:
-                try:
-                    temp_video = (
-                        embedder.get_video_noise(video)
-                        if embedder.mode == "video noise"
-                        else video
-                    )
-                    emb = embedder.embed(temp_video)
-                    key = (embedder.model_name, embedder.mode)
-                    accumulator[key]["embeddings"].append(emb)
-                    accumulator[key]["segment_ids"].append(segment_id)
-                except Exception as e:
-                    print(f"❌ Video embed fail {segment_id} with {embedder.model_name}: {e}")
-
-        except Exception as e:
-            print(f"❌ Segment load fail {segment_id}: {e}")
-
-    return accumulator
-
-def save_embeddings(accumulator, output_dir, created_at):
-    os.makedirs(output_dir, exist_ok=True)
-
-    for (model, mode), data in accumulator.items():
-        if not data["embeddings"]:
-            continue
-
-        embs = np.stack(data["embeddings"])
-        seg_ids = data["segment_ids"]
-
-        base = f"{model}_{mode}_{created_at}"
-        npy_path = os.path.join(output_dir, f"{base}.npy")
-        csv_path = os.path.join(output_dir, f"{base}.csv")
-
-        np.save(npy_path, embs)
-        with open(csv_path, "w") as f:
-            for sid in seg_ids:
-                f.write(sid + "\n")
-
-        print(f"✅ Saved: {npy_path} and {csv_path}")
-
-def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
-    now = datetime.utcnow().isoformat()
-
-    for (model, mode), data in accumulator.items():
-        if not data["embeddings"]:
-            continue
-
-        base = f"{model}_{mode}_{created_at}"
-        npy_path = os.path.join(output_dir, f"{base}.npy")
-
-        for sid in data["segment_ids"]:
-            embedding_dict = {
-                "embedding_id": str(uuid.uuid4()),
-                "segment_id": sid,
-                "mode": mode,
-                "model_name": model,
-                "embedding_type": "raw",
-                "reducer_id": None,
-                "contraster_id": None,
-                "embedding_path": npy_path,
-                "created_at": now
-            }
-            insert_embedding(db_path, embedding_dict)
-
-    print("✅ Inserted embeddings into DB.")
-
-def create_faiss_index_and_upload(output_dir, dim=512, dropbox_path="/faiss_index/"):
-
-    from utils.config_loader import load_config
-
+    Returns (num_segments, num_uploaded_indices)
+    """
     config = load_config()
-    access_token = config["dropbox"]["access_token"]
+    db_path = config["database"]["embedding_db_path"]
 
-    for fname in os.listdir(output_dir):
-        if fname.endswith(".npy"):
-            npy_path = os.path.join(output_dir, fname)
-            embs = np.load(npy_path)
+    print(f"Getting segments for {created_at}")
+    segments = get_segments_by_created_at(db_path, created_at)
+    print(f"Found {len(segments)} segments")
+    if len(segments) == 0:
+        print("❌ No segments found for the specified created_at timestamp")
+        return 0, 0
 
-            index = faiss.IndexFlatL2(embs.shape[1] if dim is None else dim)
-            index.add(embs)
+    print("🔄 Generating embeddings for all segments...")
+    accumulator = embed_segments(segments)
+    print("✅ Embedding generation complete")
 
-            faiss_path = npy_path.replace(".npy", ".faiss")
-            faiss.write_index(index, faiss_path)
-            print(f"✅ FAISS index written: {faiss_path}")
+    print("\n📊 Embedding Generation Summary:")
+    for (model, mode), data in accumulator.items():
+        if data["embeddings"]:
+            print(f"  {model} | {mode}: {len(data['embeddings'])} embeddings")
+        else:
+            print(f"  {model} | {mode}: ⚠️ No embeddings produced")
 
-            # Upload to Dropbox
-            dbx = dropbox.Dropbox(access_token)
-            with open(faiss_path, "rb") as f:
-                dbx.files_upload(f.read(), dropbox_path + os.path.basename(faiss_path), mode=dropbox.files.WriteMode.overwrite)
-                print(f"☁️ Uploaded to Dropbox: {dropbox_path + os.path.basename(faiss_path)}")
+    print("\n💾 Saving embeddings to files...")
+    saved_files = save_embeddings_to_files(accumulator, output_dir, created_at)
+    print(f"✅ Saved {len(saved_files)} embedding files")
+
+    print("\n🗄️ Inserting embeddings into database...")
+    insert_embeddings_to_db(accumulator, db_path, created_at, output_dir)
+
+    print("\n🔍 Creating FAISS indices and uploading to Dropbox...")
+    uploaded_files = create_faiss_index_and_upload(output_dir)
+    print(f"✅ Uploaded {len(uploaded_files)} FAISS indices to Dropbox")
+
+    return len(segments), len(uploaded_files)
 
 
 def main():
-    config = load_config()
-    db_path = config["database"]["embedding_db_path"]
-    segment_dir = config["paths"]["segment_dir"]
-    embedding_out_dir = config["paths"]["embedding_dir"]
+    parser = argparse.ArgumentParser(description="Generate embeddings for segments with a specific created_at")
+    parser.add_argument("--created-at", type=str, required=True, help="ISO8601 created_at partition to process")
+    parser.add_argument("--output-dir", type=str, default="./embeddings/generated", help="Directory to save embeddings")
+    args = parser.parse_args()
 
-    # Dates
-    # # 2025-07-31T16:46:45.022260
-    # # 2025-08-01T15:30:28.371559
-    created_at = "2025-07-31T16:46:45.022260"
-
-    segments = get_segments_by_created_at(db_path, created_at)
-    accumulator = embed_segments(segments)
-
-    print(accumulator)
-    save_embeddings(accumulator, embedding_out_dir, created_at)
-    
-    # Optional: insert to DB
-    insert_embeddings_to_db(
-        accumulator, db_path, created_at, embedding_out_dir
-    )
-
-    # Optional: FAISS index + Dropbox
-    create_faiss_index_and_upload(embedding_out_dir)    
-
+    num_segments, num_uploaded = generate_for_created_at(args.created_at, args.output_dir)
+    if num_segments > 0:
+        print("\n🎉 Complete! Summary:")
+        print(f"  - Processed {num_segments} segments")
+        print(f"  - Uploaded {num_uploaded} FAISS indices to Dropbox")
 
 if __name__ == "__main__":
     main()
