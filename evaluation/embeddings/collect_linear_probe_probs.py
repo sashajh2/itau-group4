@@ -19,12 +19,14 @@ def main():
     # Load labels
     with open(args.labels, 'rb') as f:
         labels = np.array(pickle.load(f))
+        print("Shape of labels: ", labels.shape)
 
     # Collect probabilities for each embedding
     prob_dict = {}
     for emb_file, name in zip(args.embeddings, args.names):
         print(f"Processing {name} from {emb_file}")
         emb = np.load(emb_file)
+        print("Shape of embeddings: ", emb.shape)
         probs = get_oof_linear_probe_probs(emb, labels)
         prob_dict[f'{name}_prob'] = probs
 
