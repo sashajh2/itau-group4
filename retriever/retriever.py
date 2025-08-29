@@ -102,8 +102,8 @@ def retrieve_hubert_embeddings_and_labels(
         try:
             # Query the segments table for this segment_id
             cursor.execute(
-                "SELECT audio_label FROM segments WHERE segment_id = ? AND created_at = ?",
-                (segment_id, created_at)
+                "SELECT audio_label FROM segments WHERE segment_id = ?",
+                (segment_id,)
             )
             result = cursor.fetchone()
             
@@ -132,20 +132,17 @@ def retrieve_hubert_embeddings_and_labels(
     print(f"💾 Saving embeddings to {embeddings_output_path}")
     np.save(embeddings_output_path, embeddings)
     
-    # Save labels as .pkl
+    # Save labels as .pkl (just the raw labels array like the original format)
     labels_output_path = f"{output_dir}/hubert_labels_{created_at.replace(':', '-').replace('+', '_')}.pkl"
     print(f"💾 Saving labels to {labels_output_path}")
     
-    labels_data = {
-        'labels': labels,
-        'segment_ids': segment_ids,
-        'created_at': created_at,
-        'total_embeddings': total_embeddings,
-        'embedding_dim': embedding_dim
-    }
+    # Convert to numpy array and save just the labels (like the original format)
+    labels_array = np.array(labels)
+    print(f"📊 Labels array shape: {labels_array.shape}, dtype: {labels_array.dtype}")
     
+    # Save just the labels array, not a dictionary
     with open(labels_output_path, 'wb') as f:
-        pickle.dump(labels_data, f)
+        pickle.dump(labels_array, f)
     
     # Clean up temporary files
     print("🧹 Cleaning up temporary files...")
