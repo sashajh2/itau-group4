@@ -59,10 +59,10 @@ def run_migration(db_path: Path) -> None:
 
         cur.execute("""
             UPDATE embeddings
-            SET mode='audio', noise='noise'
+            SET mode='audio', noise='noisy'
             WHERE mode='audio_noise';
         """)
-        print(f"    set audio_noise    -> (audio, noise):     {cur.rowcount}")
+        print(f"    set audio_noise    -> (audio, noisy):     {cur.rowcount}")
 
         # ensure video/audio plain have an explicit noise
         cur.execute("""
