@@ -1,10 +1,30 @@
 from retriever.embedders import AUDIO_EMBEDDERS, VIDEO_EMBEDDERS, DENOISERS
-from retriever.embedders.hubert_embedder import HubertEmbedder
-from retriever.embedders.openl3_embedder import Openl3Embedder
 from moviepy import VideoFileClip
 from utils.embedding_utils import get_audio_array
 import numpy as np
+from collections import defaultdict
 
+MODE_AUDIO = "audio"
+MODE_VIDEO = "video"
+MODE_AUDIO_DENOISED = "audio_denoised"
+MODE_AUDIO_NOISY = "audio_noisy"
+
+NOISE_NONE = "none"
+NOISE_DENOISED = "denoised"
+NOISE_NOISY = "noisy"
+
+def _embed_audio_with_sr(embedder, wav, sr):
+    """Hubert expects 16k; others use the given SR."""
+    if embedder.model_name == "hubert":
+        # If caller didn't already give 16k, resample
+        if sr != 16000:
+            # assumes you have a helper; otherwise resample here
+            wav16 = get_audio_array(wav, 16000)  # or your resampler
+            return embedder.embed(wav16, 16000)
+        return embedder.embed(wav, 16000)
+    else:
+        return embedder.embed(wav, sr)
+        
 def embed_segments(segments):
     """
     Generate embeddings for all segments using all available embedders and denoisers.
@@ -13,23 +33,15 @@ def embed_segments(segments):
         segments: List of segment dictionaries
         
     Returns:
-        accumulator: Dictionary with (model, mode) keys containing embeddings and segment_ids
+        accumulator: Dictionary with (model, noise, mode) keys containing embeddings and segment_ids
     """
-    # Create accumulator with regular audio embedders
-    accumulator = {
-        (e.model_name, e.mode): {"embeddings": [], "segment_ids": []}
-        for e in AUDIO_EMBEDDERS + VIDEO_EMBEDDERS
-    }
-    
-    # Add entries for denoised/noise embedders that will be created dynamically
-    for embedder in AUDIO_EMBEDDERS:
-        if embedder.mode == "audio":
-            for denoiser_name in DENOISERS.keys():
-                # Add entries for both denoised and noise modes
-                key_denoised = (f"{embedder.model_name}_{denoiser_name}", "audio_denoised")
-                key_noise = (f"{embedder.model_name}_{denoiser_name}", "audio_noise")
-                accumulator[key_denoised] = {"embeddings": [], "segment_ids": []}
-                accumulator[key_noise] = {"embeddings": [], "segment_ids": []}
+    accumulator = defaultdict(lambda: {"embeddings": [], "segment_ids": []})
+
+    for e in AUDIO_EMBEDDERS:
+        for noise in (NOISE_NONE, NOISE_DENOISED, NOISE_NOISY):
+            _ = accumulator[(e.model_name, MODE_AUDIO, noise)]
+    for e in VIDEO_EMBEDDERS:
+        _ = accumulator[(e.model_name, MODE_VIDEO, NOISE_NONE)]
 
     for i, segment in enumerate(segments):
         if i % 100 == 0:
@@ -45,100 +57,93 @@ def embed_segments(segments):
             video = video.subclipped(start_time, start_time + duration)
             audio = video.audio
             sr = audio.fps
-            audio_array = get_audio_array(audio, sr)
+            wav = get_audio_array(audio, sr)
             
             # Create 16kHz audio array specifically for Hubert (which expects 16kHz)
-            audio_array_16k = get_audio_array(audio, 16000)
-
-            # Process audio with denoisers to get noised and denoised versions
-            denoised_audio = {}
-            noise_audio = {}
-            denoised_audio_16k = {}
-            noise_audio_16k = {}
+            wav_16k = get_audio_array(audio, 16000)
             
+            ### BASE AUDIO
+            for embedder in AUDIO_EMBEDDERS:
+                try:
+                    # parameters for embedding
+                    wav_to_embed = wav if embedder.model_name != "hubert" else wav_16k
+                    sr_to_embed = sr if embedder.model_name != "hubert" else 16000
+
+                    # generate embedding
+                    emb = _embed_audio_with_sr(embedder, wav_to_embed, sr_to_embed)
+
+                    # add to accumulator
+                    key = (embedder.model_name, "audio", NOISE_NONE)
+                    accumulator[key]["embeddings"].append(emb)
+                    accumulator[key]["segment_ids"].append(segment_id)
+                except Exception as e:
+                    print(f"❌ Audio embed fail {segment_id} with {embedder.model_name}: {e}")
+        
+            ### GENERATE DENOISED/NOISY AUDIO
+            denoised_by_name = {}
+            noisy_by_name    = {}
+            denoised16_by_name = {}
+            noisy16_by_name    = {}
+
             for denoiser_name, denoiser in DENOISERS.items():
                 try:
-                    # Use the new split_audio function for efficiency
+                    # Support denoisers that want explicit sr
                     if denoiser_name == "voicefixer":
-                        denoised, noise = denoiser.split_audio(audio_array, sr=sr)
-                        denoised_16k, noise_16k = denoiser.split_audio(audio_array_16k, sr=16000)
+                        deno, noise = denoiser.split_audio(wav, sr=sr)
+                        deno16, noise16 = denoiser.split_audio(wav_16k, sr=16000)
                     else:
-                        denoised, noise = denoiser.split_audio(audio_array)
-                        denoised_16k, noise_16k = denoiser.split_audio(audio_array_16k)
-                    
-                    denoised_audio[denoiser_name] = denoised
-                    noise_audio[denoiser_name] = noise
+                        deno, noise = denoiser.split_audio(wav)
+                        deno16, noise16 = denoiser.split_audio(wav_16k)
 
-                    denoised_audio_16k[denoiser_name] = denoised_16k
-                    noise_audio_16k[denoiser_name] = noise_16k
+                    denoised_by_name[denoiser_name]  = deno
+                    noisy_by_name[denoiser_name]     = noise
+                    denoised16_by_name[denoiser_name] = deno16
+                    noisy16_by_name[denoiser_name]    = noise16
                 except Exception as e:
                     print(f"❌ Denoising fail with {denoiser_name} for {segment_id}: {e}")
 
-            # Process regular audio embedders
-            for embedder in AUDIO_EMBEDDERS:
-                if embedder.mode == "audio":
-                    try:
-                        # For Hubert, use 16kHz audio array; for others, use original audio_array
-                        if embedder.model_name == "hubert":
-                            emb = embedder.embed(audio_array_16k, 16000)
-                        else:
-                            emb = embedder.embed(audio_array, sr)
-                        key = (embedder.model_name, embedder.mode)
-                        accumulator[key]["embeddings"].append(emb)
-                        accumulator[key]["segment_ids"].append(segment_id)
-                    except Exception as e:
-                        print(f"❌ Audio embed fail {segment_id} with {embedder.model_name}: {e}")
-
-            # Process denoised audio embedders
+            ### Embed denoised/noisy audio
             for denoiser_name in DENOISERS.keys():
-                if denoiser_name in denoised_audio:
-                    # Create embedders for denoised audio
-                    hubert_denoised = HubertEmbedder(mode="audio_denoised")
-                    openl3_denoised = Openl3Embedder(mode="audio_denoised")
-                    
-                    for embedder in [hubert_denoised, openl3_denoised]:
+                if denoiser_name in denoised_by_name:
+                    for embedder in AUDIO_EMBEDDERS:
                         try:
-                            # For Hubert, use 16kHz denoised audio; for others, use original
-                            if embedder.model_name == "hubert":
-                                emb = embedder.embed(denoised_audio_16k[denoiser_name], 16000)
-                            else:
-                                emb = embedder.embed(denoised_audio[denoiser_name], sr)
-                            key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
+                            # parameters for embedding
+                            wav_deno = denoised16_by_name[denoiser_name] if embedder.model_name == "hubert" else denoised_by_name[denoiser_name]
+                            sr_deno  = 16000 if embedder.model_name == "hubert" else sr
+
+                            # generate embedding
+                            emb = _embed_audio_with_sr(embedder, wav_deno, sr_deno)
+
+                            # add to accumulator
+                            key = (embedder.model_name, "audio", NOISE_DENOISED)
                             accumulator[key]["embeddings"].append(emb)
                             accumulator[key]["segment_ids"].append(segment_id)
                         except Exception as e:
-                            print(f"❌ Denoised embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
+                            print(f"❌ Denoised embed fail {segment_id} with {embedder.model_name}/{denoiser_name}: {e}")
 
-            # Process noise audio embedders
-            for denoiser_name in DENOISERS.keys():
-                if denoiser_name in noise_audio:
-                    # Create embedders for noise audio
-                    hubert_noise = HubertEmbedder(mode="audio_noise")
-                    openl3_noise = Openl3Embedder(mode="audio_noise")
-                    
-                    for embedder in [hubert_noise, openl3_noise]:
+                if denoiser_name in noisy_by_name:
+                    for embedder in AUDIO_EMBEDDERS:
                         try:
-                            # For Hubert, use 16kHz noise audio; for others, use original
-                            if embedder.model_name == "hubert":
-                                emb = embedder.embed(noise_audio_16k[denoiser_name], 16000)
-                            else:
-                                emb = embedder.embed(noise_audio[denoiser_name], sr)
-                            key = (f"{embedder.model_name}_{denoiser_name}", embedder.mode)
+                            # parameters for embedding
+                            wav_noisy = noisy16_by_name[denoiser_name] if embedder.model_name == "hubert" else noisy_by_name[denoiser_name]
+                            sr_noisy  = 16000 if embedder.model_name == "hubert" else sr
+
+                            # generate embedding
+                            emb = _embed_audio_with_sr(embedder, wav_noisy, sr_noisy)
+
+                            # add to accumulator
+                            key = (embedder.model_name, "audio", NOISE_NOISY)
                             accumulator[key]["embeddings"].append(emb)
                             accumulator[key]["segment_ids"].append(segment_id)
                         except Exception as e:
-                            print(f"❌ Noise embed fail {segment_id} with {embedder.model_name}_{denoiser_name}: {e}")
+                            print(f"❌ Noisy embed fail {segment_id} with {embedder.model_name}/{denoiser_name}: {e}")
 
-            # Process video embedders
+            ### VIDEO
             for embedder in VIDEO_EMBEDDERS:
                 try:
-                    temp_video = (
-                        embedder.get_video_noise(video)
-                        if embedder.mode == "video noise"
-                        else video
-                    )
-                    emb = embedder.embed(temp_video)
-                    key = (embedder.model_name, embedder.mode)
+                    # parameters for embedding
+                    emb = embedder.embed(video)
+                    key = (embedder.model_name, "video", NOISE_NONE)
                     accumulator[key]["embeddings"].append(emb)
                     accumulator[key]["segment_ids"].append(segment_id)
                 except Exception as e:
@@ -147,4 +152,4 @@ def embed_segments(segments):
         except Exception as e:
             print(f"❌ Segment load fail {segment_id}: {e}")
 
-    return accumulator 
+    return accumulator
