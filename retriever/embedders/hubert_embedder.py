@@ -5,13 +5,12 @@ import torch
 from transformers import HubertModel
 from utils.config_loader import load_config
 
-class HubertEmbedder:
-    def __init__(self, mode="audio", sr=16000):
+class HubertEmbedder: 
+    def __init__(self, sr=16000):
         config = load_config()
         self.hf_token = config["huggingface"]["token"]
 
         self.model_name = "hubert"
-        self.mode = mode  # "audio", "audio_noise", "audio_denoised"
         # HuBERT expects 16 kHz inputs. Keep target SR configurable but default to 16k.
         self.sr = sr
 
@@ -19,12 +18,12 @@ class HubertEmbedder:
         self.model = HubertModel.from_pretrained("facebook/hubert-base-ls960", token=self.hf_token)
         self.model.eval()
 
-    def embed(self, audio_array: np.ndarray) -> np.ndarray:
+    def embed(self, audio_array: np.ndarray, sr: int) -> np.ndarray:
         """Return HuBERT embedding for a single audio array.
         
         Expects 16kHz audio array (resampling handled upstream).
         """
-        print(f"🔍 Input audio: shape={audio_array.shape}, dtype={audio_array.dtype}")
+        print(f"🔍 Input audio: shape={audio_array.shape}, dtype={audio_array.dtype}, sr={sr}")
         
         # Convert to float32 tensor, add batch dim
         inputs = torch.tensor(audio_array, dtype=torch.float32).unsqueeze(0)

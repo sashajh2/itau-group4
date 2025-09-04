@@ -38,7 +38,7 @@ def insert_embedding(db_path, embedding_dict):
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO embeddings (
-                embedding_id, segment_id, mode, model_name,
+                embedding_id, segment_id, mode, noise, model_name,
                 embedding_type, reducer_id, contraster_id,
                 embedding_path, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -46,6 +46,7 @@ def insert_embedding(db_path, embedding_dict):
             embedding_dict["embedding_id"],
             embedding_dict["segment_id"],
             embedding_dict["mode"],
+            embedding_dict["noise"],
             embedding_dict["model_name"],
             embedding_dict["embedding_type"],
             embedding_dict["reducer_id"],

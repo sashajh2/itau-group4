@@ -30,11 +30,11 @@ def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/gen
     print("✅ Embedding generation complete")
 
     print("\n📊 Embedding Generation Summary:")
-    for (model, mode), data in accumulator.items():
+    for (model, mode, noise), data in accumulator.items():
         if data["embeddings"]:
-            print(f"  {model} | {mode}: {len(data['embeddings'])} embeddings")
+            print(f"  {model} | {mode} | {noise}: {len(data['embeddings'])} embeddings")
         else:
-            print(f"  {model} | {mode}: ⚠️ No embeddings produced")
+            print(f"  {model} | {mode} | {noise}: ⚠️ No embeddings produced")
 
     print("\n💾 Saving embeddings to files...")
     saved_files = save_embeddings_to_files(accumulator, output_dir, created_at)

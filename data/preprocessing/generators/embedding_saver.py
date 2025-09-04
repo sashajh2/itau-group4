@@ -18,7 +18,7 @@ def save_embeddings_to_files(accumulator, output_dir, created_at):
     
     saved_files = {}
     
-    for (model, mode), data in accumulator.items():
+    for (model, mode, noise), data in accumulator.items():
         if not data["embeddings"]:
             continue
 
@@ -29,9 +29,9 @@ def save_embeddings_to_files(accumulator, output_dir, created_at):
         if mode in ["audio_denoised", "audio_noise"]:
             # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
             denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
-            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+            base = f"{model}_{mode}_{noise}_{denoiser_name}_{created_at}"
         else:
-            base = f"{model}_{mode}_{created_at}"
+            base = f"{model}_{mode}_{noise}_{created_at}"
             
         npy_path = os.path.join(output_dir, f"{base}.npy")
         np.save(npy_path, embs)
@@ -65,7 +65,8 @@ def save_embeddings_to_files(accumulator, output_dir, created_at):
                     "segment_id": seg_id,
                     "embedding_id": emb_id,
                     "model": model,
-                    "mode": mode
+                    "mode": mode,
+                    "noise": noise
                 }
                 for idx, (seg_id, emb_id) in enumerate(zip(seg_ids, embedding_ids))
             ]
@@ -74,7 +75,7 @@ def save_embeddings_to_files(accumulator, output_dir, created_at):
         with open(mapping_path, 'w') as f:
             json.dump(mapping, f, indent=2)
         
-        saved_files[(model, mode)] = {
+        saved_files[(model, mode, noise)] = {
             "npy_path": npy_path,
             "mapping_path": mapping_path,
             "shape": embs.shape,
@@ -99,7 +100,7 @@ def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
     """
     now = datetime.now(timezone.utc).isoformat()
 
-    for (model, mode), data in accumulator.items():
+    for (model, mode, noise), data in accumulator.items():
         if not data["embeddings"]:
             continue
 
@@ -107,7 +108,7 @@ def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
         if mode in ["audio_denoised", "audio_noise"]:
             # Extract denoiser name from model (e.g., "hubert_demucs" -> "demucs")
             denoiser_name = model.split("_")[-1] if "_" in model else "unknown"
-            base = f"{model}_{mode}_{denoiser_name}_{created_at}"
+            base = f"{model}_{mode}_{noise}_{denoiser_name}_{created_at}"
         else:
             base = f"{model}_{mode}_{created_at}"
             
@@ -137,6 +138,7 @@ def insert_embeddings_to_db(accumulator, db_path, created_at, output_dir):
                 "embedding_id": embedding_id,
                 "segment_id": sid,
                 "mode": mode,
+                "noise": noise,
                 "model_name": model,
                 "embedding_type": "raw",
                 "reducer_id": None,
