@@ -28,3 +28,4 @@ opencv-python
 instaloader
 # Hugging Face Hub for dataset downloads
 huggingface_hub[hf_xet]
+requests

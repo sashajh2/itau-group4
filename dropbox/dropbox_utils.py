@@ -4,9 +4,9 @@ from utils.config_loader import load_config
 
 config = load_config()
 
-ACCESS_TOKEN = config['dropbox']['access_token']
+REFRESH_TOKEN = config['dropbox']['refresh_token']
 
-dbx = dropbox_sdk.Dropbox(ACCESS_TOKEN)
+dbx = dropbox_sdk.Dropbox(oauth2_refresh_token=REFRESH_TOKEN)
 
 def upload_file(local_path, dropbox_path, overwrite=True):
     mode = dropbox_sdk.files.WriteMode.overwrite if overwrite else dropbox_sdk.files.WriteMode.add
