@@ -4,7 +4,7 @@ import dropbox
 import json
 import tempfile
 import numpy as np
-from dropbox.dropbox_utils import get_client
+from dropbox_utils.dropbox_utils import get_client
 
 def check_dropbox_file_exists(dropbox_path):
     """
