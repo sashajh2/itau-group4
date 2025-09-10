@@ -145,7 +145,7 @@ def main():
     print("\n" + "=" * 60)
     
     # Define the paths to test
-    dropbox_base_path = "/Sasha Jovanovic-Hacon/Apps/itau-group4/embedding_store/AVDeepfake1M/raw/audio/denoised/"
+    dropbox_base_path = "/embedding_store/AVDeepfake1M/raw/audio/denoised/"
     index_filename = "hubert_demucs.index"
     mapping_filename = "hubert_demucs_mapping.json"
     
