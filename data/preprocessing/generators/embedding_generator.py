@@ -6,8 +6,6 @@ from collections import defaultdict
 
 MODE_AUDIO = "audio"
 MODE_VIDEO = "video"
-MODE_AUDIO_DENOISED = "audio_denoised"
-MODE_AUDIO_NOISY = "audio_noisy"
 
 NOISE_NONE = "none"
 NOISE_DENOISED = "denoised"

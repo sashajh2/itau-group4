@@ -3,10 +3,10 @@ import faiss
 import dropbox
 import json
 import tempfile
-from utils.config_loader import load_config
 import numpy as np
+from dropbox_utils.dropbox_utils import get_client
 
-def check_dropbox_file_exists(dbx, dropbox_path):
+def check_dropbox_file_exists(dropbox_path):
     """
     Check if a file exists in Dropbox.
     
@@ -18,7 +18,7 @@ def check_dropbox_file_exists(dbx, dropbox_path):
         bool: True if file exists, False otherwise
     """
     try:
-        dbx.files_get_metadata(dropbox_path)
+        get_client().files_get_metadata(dropbox_path)
         return True
     except dropbox.exceptions.ApiError as e:
         # Check if the error is "not found"
@@ -36,7 +36,7 @@ def check_dropbox_file_exists(dbx, dropbox_path):
             else:
                 raise e
 
-def download_and_merge_faiss_index(dbx, dropbox_index_path, new_embeddings, new_mapping):
+def download_and_merge_faiss_index(dropbox_index_path, new_embeddings, new_mapping):
     """
     Download existing FAISS index, merge with new embeddings, and return merged index and mapping.
     
@@ -56,7 +56,7 @@ def download_and_merge_faiss_index(dbx, dropbox_index_path, new_embeddings, new_
     try:
         # Download existing index
         with open(temp_index_path, "wb") as f:
-            metadata, response = dbx.files_download(dropbox_index_path)
+            metadata, response = get_client().files_download(dropbox_index_path)
             f.write(response.content)
         
         # Load existing index
@@ -74,7 +74,7 @@ def download_and_merge_faiss_index(dbx, dropbox_index_path, new_embeddings, new_
         try:
             # Download existing mapping
             with open(temp_mapping_path, "wb") as f:
-                metadata, response = dbx.files_download(dropbox_mapping_path)
+                metadata, response = get_client().files_download(dropbox_mapping_path)
                 f.write(response.content)
             
             # Load existing mapping
@@ -173,10 +173,6 @@ def create_faiss_index_and_upload(output_dir, dropbox_base_path="/embedding_stor
         output_dir: Directory containing the .npy embedding files
         dropbox_base_path: Base path in Dropbox for uploading indices
     """
-    config = load_config()
-    access_token = config["dropbox"]["access_token"]
-    dbx = dropbox.Dropbox(access_token)
-
     uploaded_files = []
     
     for fname in os.listdir(output_dir):
@@ -239,13 +235,13 @@ def create_faiss_index_and_upload(output_dir, dropbox_base_path="/embedding_stor
                 mapping_data = {}
             
             # Check if index already exists in Dropbox
-            index_exists = check_dropbox_file_exists(dbx, dropbox_index_path)
+            index_exists = check_dropbox_file_exists(dropbox_index_path)
             
             if index_exists:
                 print(f"📥 Found existing index, appending to: {dropbox_index_path}")
                 # Download existing index and merge
                 faiss_index, merged_mapping = download_and_merge_faiss_index(
-                    dbx, dropbox_index_path, embs, mapping_data
+                    dropbox_index_path, embs, mapping_data
                 )
             else:
                 print(f"🆕 Creating new index: {dropbox_index_path}")
@@ -262,7 +258,7 @@ def create_faiss_index_and_upload(output_dir, dropbox_base_path="/embedding_stor
             # Upload FAISS index to Dropbox
             try:
                 with open(faiss_path, "rb") as f:
-                    dbx.files_upload(
+                    get_client().files_upload(
                         f.read(), 
                         dropbox_index_path, 
                         mode=dropbox.files.WriteMode.overwrite
@@ -281,7 +277,7 @@ def create_faiss_index_and_upload(output_dir, dropbox_base_path="/embedding_stor
                 
                 # Upload mapping file
                 with open(temp_mapping_path, "rb") as f:
-                    dbx.files_upload(
+                    get_client().files_upload(
                         f.read(),
                         dropbox_mapping_path,
                         mode=dropbox.files.WriteMode.overwrite

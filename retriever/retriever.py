@@ -12,7 +12,7 @@ import sqlite3
 import faiss
 from pathlib import Path
 from typing import Tuple, Dict, List
-from dropbox.dropbox_utils import download_file
+from dropbox_utils.dropbox_utils import download_file
 from utils.config_loader import load_config
 
 def retrieve_hubert_embeddings_and_labels(
