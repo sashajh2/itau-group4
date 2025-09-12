@@ -3,6 +3,7 @@ from moviepy import VideoFileClip
 from utils.embedding_utils import get_audio_array
 import numpy as np
 from collections import defaultdict
+from tqdm import tqdm
 
 MODE_AUDIO = "audio"
 MODE_VIDEO = "video"
@@ -41,10 +42,7 @@ def embed_segments(segments):
     for e in VIDEO_EMBEDDERS:
         _ = accumulator[(MODE_VIDEO, e.model_name, NOISE_NONE, "none")]
 
-    for i, segment in enumerate(segments):
-        if i % 100 == 0:
-            print(f"Processing segment {i+1}/{len(segments)}: {segment['segment_id']}")
-            
+    for i, segment in enumerate(tqdm(segments, desc="Generating embeddings", unit="segment")):
         segment_id = segment["segment_id"]
         filepath = segment["video_path"]
         start_time = segment["start_time"]

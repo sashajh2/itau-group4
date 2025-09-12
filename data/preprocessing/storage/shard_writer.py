@@ -2,7 +2,7 @@ from collections import defaultdict
 import os, json, uuid
 import numpy as np
 from datetime import datetime, timezone
-from dropbox_utils.dropbox_utils import get_client
+from dropbox_utils.dropbox_utils import get_client, upload_file
 from db.embedding_store_utils import insert_many_embeddings  # implement batch insert
 
 TARGET_SHARD_BYTES = 512 * 1024 * 1024  # 512 MB
@@ -13,14 +13,8 @@ def approx_bytes(n_rows, dim, dtype):
 
 def partition_dir(root, source, model, mode, noise, denoiser_name, version):
     dn = "none" if denoiser_name in (None, "", "none") else denoiser_name
-    return f"{root}/{source}/{mode}/{noise}/{model}/{dn}/v{version}/"
+    return f"{root}/{source}/raw/{mode}/{noise}/{model}/{dn}/v{version}/"
 
-def atomic_upload(local_path, dropbox_path):
-    dbx = get_client()
-    tmp = dropbox_path + ".tmp"
-    with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), tmp, mode=dbx.files.WriteMode.overwrite)
-    dbx.files_move_v2(tmp, dropbox_path, allow_shared_folder=True, autorename=False)
 
 class ShardWriter:
     def __init__(self, dropbox_root, db_path, source, version, tmp_dir="/tmp/emb"):
@@ -77,9 +71,13 @@ class ShardWriter:
         shard_dbx = d_dir + shard_name + ".npy"
         meta_dbx  = d_dir + shard_name + ".meta.json"
 
-        # ensure folders exist (Dropbox will create on upload/move; optional pre-create)
-        atomic_upload(npy_local,  shard_dbx)
-        atomic_upload(meta_local, meta_dbx)
+        # Upload files using the existing upload_file function with error handling
+        try:
+            upload_file(npy_local, shard_dbx, overwrite=True)
+            upload_file(meta_local, meta_dbx, overwrite=True)
+        except Exception as e:
+            print(f"❌ Upload failed for shard {shard_name}: {e}")
+            raise e
 
         # DB rows
         now = datetime.now(timezone.utc).isoformat()

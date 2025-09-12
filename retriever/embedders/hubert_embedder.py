@@ -23,8 +23,6 @@ class HubertEmbedder:
         
         Expects 16kHz audio array (resampling handled upstream).
         """
-        print(f"🔍 Input audio: shape={audio_array.shape}, dtype={audio_array.dtype}, sr={sr}")
-        
         # Convert to float32 tensor, add batch dim
         inputs = torch.tensor(audio_array, dtype=torch.float32).unsqueeze(0)
 
@@ -34,5 +32,4 @@ class HubertEmbedder:
         # Average over time dimension → shape (1, dim)
         hidden_states = outputs.last_hidden_state
         embedding = hidden_states.mean(dim=1).squeeze().numpy()
-        print(f"🎉 HuBERT embedding generated: shape {embedding.shape}")
         return embedding

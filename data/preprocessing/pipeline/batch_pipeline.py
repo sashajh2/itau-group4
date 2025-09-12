@@ -2,6 +2,7 @@ import argparse
 import os
 import shutil
 from datetime import datetime, timezone
+from tqdm import tqdm
 
 from ...loaders.avdeepfake import download_and_extract_part
 from ..extractors.segment_extractor import extract_and_insert_segments
@@ -28,7 +29,7 @@ def main():
     total_uploaded_shards = 0
     total_attempted = 0
 
-    for part in range(args.start, args.end + 1):
+    for part in tqdm(range(args.start, args.end + 1), desc="Processing parts", unit="part"):
         part_str = f"{part:03d}"
         print(f"\n===== Processing part {part_str} =====")
 
