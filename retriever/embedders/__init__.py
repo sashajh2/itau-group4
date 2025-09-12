@@ -5,10 +5,11 @@ from .senet_embedder import SenetEmbedder
 from .denoisers import DemucsDenoiser, VoiceFixerDenoiser
 
 # Denoisers
-DENOISERS = {
-    "demucs": DemucsDenoiser(),
-    "voicefixer": VoiceFixerDenoiser(),
-}
+# DENOISERS = {
+#     "demucs": DemucsDenoiser(),
+#     "voicefixer": VoiceFixerDenoiser(),
+# }
+DENOISERS = {}
 
 VIDEO_EMBEDDERS = [
     # RidnetEmbedder(),

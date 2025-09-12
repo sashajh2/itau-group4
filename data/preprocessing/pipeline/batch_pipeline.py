@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from ...loaders.avdeepfake import download_and_extract_part
 from ..extractors.segment_extractor import extract_and_insert_segments
 from .embedding_pipeline import generate_for_created_at
+from utils.config_loader import load_config
+from ..storage.shard_writer import ShardWriter
 
 
 def main():
@@ -13,7 +15,18 @@ def main():
     parser.add_argument("--start", type=int, default=2, help="Start part (inclusive), e.g., 2 for 002")
     parser.add_argument("--end", type=int, default=50, help="End part (inclusive), e.g., 50 for 050")
     parser.add_argument("--base-dir", type=str, default="./data/temp_video_extracted/AV1M", help="Base local dir for downloads")
+    parser.add_argument("--version", type=str, default="2025-09-12", help="Version string")
     args = parser.parse_args()
+
+    config = load_config()
+    db_path = config["database"]["embedding_db_path"]
+
+    # One writer for the whole batch
+    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="AVDeepfake1M", version=args.version)
+    
+    total_segments = 0
+    total_uploaded_shards = 0
+    total_attempted = 0
 
     for part in range(args.start, args.end + 1):
         part_str = f"{part:03d}"
@@ -41,8 +54,11 @@ def main():
         print(f"Inserted {num_segments} segments for part {part_str}")
 
         # Step 3: Generate embeddings for this created_at; Dropbox appends if exists
-        num_segments_processed, num_uploaded = generate_for_created_at(created_at, "./embeddings/generated")
-        print(f"Embeddings: processed={num_segments_processed}, uploaded_indices={num_uploaded}")
+        num_segments_processed, num_attempted = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
+        print(f"Embeddings: processed={num_segments_processed}, attempted={num_attempted}")
+        total_segments += num_segments_processed
+        total_attempted += num_attempted
+
 
         # Step 4: Clean up local zip and extracted directory for this part
         zip_file = os.path.join(args.base_dir, "train", f"train.zip.{part_str}")
@@ -60,6 +76,9 @@ def main():
         except Exception as e:
             print(f"⚠️ Could not delete {extracted_part_dir}: {e}")
 
+    shard_writer.finalize()
+    print(f"Batch summary: segments={total_segments}, vectors_attempted={total_attempted}, "
+          f"uploaded_shards={getattr(shard_writer, 'uploaded_shards', 'n/a')}")
 
 if __name__ == "__main__":
     main()
