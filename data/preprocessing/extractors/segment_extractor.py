@@ -106,24 +106,27 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
                 })
         # both real
         else:
-            # randomly sample segment of the real video
+            # randomly sample multiple segments of the real video (5 segments)
             real_duration = get_video_duration(row['video_path'])
             if real_duration is None:
                 continue  # skip if there's an error loading
-            segment_length = round(random.uniform(*real_clip_duration_bounds), 2)
-            start, end = sample_real_segment(real_duration, segment_length)
-            segment_rows.append({
-                'audio_label': 0,
-                'video_label': 0,
-                'overall_label': 0,
-                'video_path': row['video_path'],
-                'json_path': row['json_path'],
-                'source_folder': row['source_folder'],
-                'segment_start': start,
-                'segment_end': end,
-                'audio_model': row['audio_model'],
-                'video_model': row['video_model']
-            })
+            
+            num_real_segments = 5
+            for _ in range(num_real_segments):
+                segment_length = round(random.uniform(*real_clip_duration_bounds), 2)
+                start, end = sample_real_segment(real_duration, segment_length)
+                segment_rows.append({
+                    'audio_label': 0,
+                    'video_label': 0,
+                    'overall_label': 0,
+                    'video_path': row['video_path'],
+                    'json_path': row['json_path'],
+                    'source_folder': row['source_folder'],
+                    'segment_start': start,
+                    'segment_end': end,
+                    'audio_model': row['audio_model'],
+                    'video_model': row['video_model']
+                })
 
     return pd.DataFrame(segment_rows)
 
