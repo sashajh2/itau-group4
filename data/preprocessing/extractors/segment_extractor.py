@@ -134,36 +134,55 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    for _, row in segment_metadata_df.iterrows():
-        video_path_parts = row['video_path'].split('/')
-        parent_folder = video_path_parts[-3]  # e.g., '0N1oA9LUEc4'
-        child_folder = video_path_parts[-2]   # e.g., '00008'
-        video_name = os.path.basename(row['video_path']).replace('.mp4', '')
-        segment_ms = int(row['segment_start'] * 1000)
+    successful_inserts = 0
+    failed_inserts = 0
+    
+    for i, (_, row) in enumerate(segment_metadata_df.iterrows()):
+        try:
+            video_path_parts = row['video_path'].split('/')
+            parent_folder = video_path_parts[-3]  # e.g., '0N1oA9LUEc4'
+            child_folder = video_path_parts[-2]   # e.g., '00008'
+            video_name = os.path.basename(row['video_path']).replace('.mp4', '')
+            segment_ms = int(row['segment_start'] * 1000)
 
-        segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}"
-        video_id = f"{parent_folder}/{child_folder}"
+            segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}"
+            video_id = f"{parent_folder}/{child_folder}"
 
-        cursor.execute("""
-            INSERT OR REPLACE INTO segments (
-                segment_id, source, video_id, video_path, start_time, duration, video_label, audio_label, created_at, audio_model, video_model
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            segment_id,
-            "AVDeepfake1M",
-            video_id,
-            row['video_path'],
-            float(row['segment_start']),
-            float(row['segment_end'] - row['segment_start']),
-            row['video_label'],
-            row['audio_label'],
-            created_at,
-            row['audio_model'], # audio_model
-            row['video_model']  # video_model
-        ))
+            cursor.execute("""
+                INSERT OR REPLACE INTO segments (
+                    segment_id, source, video_id, video_path, start_time, duration, video_label, audio_label, created_at, audio_model, video_model
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                segment_id,
+                "AVDeepfake1M",
+                video_id,
+                row['video_path'],
+                float(row['segment_start']),
+                float(row['segment_end'] - row['segment_start']),
+                row['video_label'],
+                row['audio_label'],
+                created_at,
+                row['audio_model'], # audio_model
+                row['video_model']  # video_model
+            ))
+            successful_inserts += 1
+        except Exception as e:
+            failed_inserts += 1
+            print(f"❌ Failed to insert segment {i}: {e}")
+            print(f"   Row data: {dict(row)}")
+    
+    print(f"📊 Insert results: {successful_inserts} successful, {failed_inserts} failed")
 
     conn.commit()
+    
+    # Debug: Count actual inserted segments
+    cursor.execute("SELECT COUNT(*) FROM segments WHERE created_at = ?", (created_at,))
+    actual_count = cursor.fetchone()[0]
+    print(f"🔍 Debug: Actually inserted {actual_count} segments (expected {len(segment_metadata_df)})")
+    
     conn.close()
+    
+    return actual_count  # Return the actual count, not the expected count
 
 
 def extract_and_insert_segments(video_root: str, created_at: str) -> int:
@@ -177,8 +196,8 @@ def extract_and_insert_segments(video_root: str, created_at: str) -> int:
 
     metadata_df = load_video_metadata(video_root)
     segment_df = generate_segment_metadata(metadata_df)
-    insert_segments_to_sqlite(segment_df, db_path, created_at)
-    return len(segment_df)
+    actual_inserted = insert_segments_to_sqlite(segment_df, db_path, created_at)
+    return actual_inserted
 
 def main():
     parser = argparse.ArgumentParser(description="Extract segments and insert into SQLite with created_at")

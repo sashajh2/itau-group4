@@ -21,6 +21,14 @@ def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/gen
     print(f"Getting segments for {created_at}")
     segments = get_segments_by_created_at(db_path, created_at)
     print(f"Found {len(segments)} segments")
+    
+    # Debug: Check if there are any segments with this created_at
+    import sqlite3
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM segments WHERE created_at = ?", (created_at,))
+        total_count = cursor.fetchone()[0]
+        print(f"🔍 Debug: Total segments in DB with created_at={created_at}: {total_count}")
     if len(segments) == 0:
         print("❌ No segments found for the specified created_at timestamp")
         return 0, 0
