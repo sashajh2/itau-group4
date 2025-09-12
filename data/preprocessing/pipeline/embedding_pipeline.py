@@ -5,11 +5,12 @@ from ..generators.embedding_saver import (
     save_embeddings_to_files,
     insert_embeddings_to_db,
 )
+from ..storage.shard_writer import ShardWriter
 from ..storage.dropbox_storage import create_faiss_index_and_upload
 import argparse
 import os
 
-def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/generated") -> tuple[int, int]:
+def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/generated", shard_writer: ShardWriter = None) -> tuple[int, int]:
     """
     Generate embeddings for all segments with the given created_at.
 
@@ -17,7 +18,6 @@ def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/gen
     """
     config = load_config()
     db_path = config["database"]["embedding_db_path"]
-
     print(f"Getting segments for {created_at}")
     segments = get_segments_by_created_at(db_path, created_at)
     print(f"Found {len(segments)} segments")
@@ -29,38 +29,32 @@ def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/gen
     accumulator = embed_segments(segments)
     print("✅ Embedding generation complete")
 
-    print("\n📊 Embedding Generation Summary:")
-    for (model, mode, noise), data in accumulator.items():
-        if data["embeddings"]:
-            print(f"  {model} | {mode} | {noise}: {len(data['embeddings'])} embeddings")
-        else:
-            print(f"  {model} | {mode} | {noise}: ⚠️ No embeddings produced")
+    attempted = 0
+    if shard_writer is None:
+        raise ValueError("shard_writer cannot be None")
+    
+    for (mode, model, noise, denoiser_name), data in accumulator.items():
+        embs = data["embeddings"]
+        seg_ids = data["segment_ids"]
+        for seg_id, emb in zip(seg_ids, embs):
+            shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
+            attempted += 1
 
-    print("\n💾 Saving embeddings to files...")
-    saved_files = save_embeddings_to_files(accumulator, output_dir, created_at)
-    print(f"✅ Saved {len(saved_files)} embedding files")
-
-    print("\n🗄️ Inserting embeddings into database...")
-    insert_embeddings_to_db(accumulator, db_path, created_at, output_dir)
-
-    print("\n🔍 Creating FAISS indices and uploading to Dropbox...")
-    uploaded_files = create_faiss_index_and_upload(output_dir)
-    print(f"✅ Uploaded {len(uploaded_files)} FAISS indices to Dropbox")
-
-    return len(segments), len(uploaded_files)
+    return len(segments), attempted
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate embeddings for segments with a specific created_at")
     parser.add_argument("--created-at", type=str, required=True, help="ISO8601 created_at partition to process")
     parser.add_argument("--output-dir", type=str, default="./embeddings/generated", help="Directory to save embeddings")
+    parser.add_argument("--shard-writer", type=ShardWriter, required=True, help="Shard writer")
     args = parser.parse_args()
 
-    num_segments, num_uploaded = generate_for_created_at(args.created_at, args.output_dir)
+    num_segments, num_uploaded = generate_for_created_at(args.created_at, args.output_dir, args.shard_writer)
     if num_segments > 0:
         print("\n🎉 Complete! Summary:")
         print(f"  - Processed {num_segments} segments")
-        print(f"  - Uploaded {num_uploaded} FAISS indices to Dropbox")
+        print(f"  - Uploaded {num_uploaded} shards to Dropbox")
 
 if __name__ == "__main__":
     main()

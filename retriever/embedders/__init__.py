@@ -5,10 +5,11 @@ from .senet_embedder import SenetEmbedder
 from .denoisers import DemucsDenoiser, VoiceFixerDenoiser
 
 # Denoisers
-DENOISERS = {
-    "demucs": DemucsDenoiser(),
-    "voicefixer": VoiceFixerDenoiser(),
-}
+# DENOISERS = {
+#     "demucs": DemucsDenoiser(),
+#     "voicefixer": VoiceFixerDenoiser(),
+# }
+DENOISERS = {}
 
 VIDEO_EMBEDDERS = [
     # RidnetEmbedder(),
@@ -17,6 +18,6 @@ VIDEO_EMBEDDERS = [
 
 AUDIO_EMBEDDERS = [
     # Regular audio embedders only
-    HubertEmbedder(mode="audio"),
-    Openl3Embedder(mode="audio"),
+    HubertEmbedder(),
+    Openl3Embedder(),
 ]

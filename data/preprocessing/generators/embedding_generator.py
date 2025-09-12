@@ -3,6 +3,7 @@ from moviepy import VideoFileClip
 from utils.embedding_utils import get_audio_array
 import numpy as np
 from collections import defaultdict
+from tqdm import tqdm
 
 MODE_AUDIO = "audio"
 MODE_VIDEO = "video"
@@ -31,20 +32,17 @@ def embed_segments(segments):
         segments: List of segment dictionaries
         
     Returns:
-        accumulator: Dictionary with (model, noise, mode) keys containing embeddings and segment_ids
+        accumulator: Dictionary with (mode, model, noise, denoiser_name) keys containing embeddings and segment_ids
     """
     accumulator = defaultdict(lambda: {"embeddings": [], "segment_ids": []})
 
     for e in AUDIO_EMBEDDERS:
         for noise in (NOISE_NONE, NOISE_DENOISED, NOISE_NOISY):
-            _ = accumulator[(e.model_name, MODE_AUDIO, noise)]
+            _ = accumulator[(MODE_AUDIO, e.model_name, noise, "none")]
     for e in VIDEO_EMBEDDERS:
-        _ = accumulator[(e.model_name, MODE_VIDEO, NOISE_NONE)]
+        _ = accumulator[(MODE_VIDEO, e.model_name, NOISE_NONE, "none")]
 
-    for i, segment in enumerate(segments):
-        if i % 100 == 0:
-            print(f"Processing segment {i+1}/{len(segments)}: {segment['segment_id']}")
-            
+    for i, segment in enumerate(tqdm(segments, desc="Generating embeddings", unit="segment")):
         segment_id = segment["segment_id"]
         filepath = segment["video_path"]
         start_time = segment["start_time"]
@@ -71,7 +69,7 @@ def embed_segments(segments):
                     emb = _embed_audio_with_sr(embedder, wav_to_embed, sr_to_embed)
 
                     # add to accumulator
-                    key = (embedder.model_name, "audio", NOISE_NONE)
+                    key = (MODE_AUDIO, embedder.model_name, NOISE_NONE, "none")
                     accumulator[key]["embeddings"].append(emb)
                     accumulator[key]["segment_ids"].append(segment_id)
                 except Exception as e:
@@ -113,7 +111,7 @@ def embed_segments(segments):
                             emb = _embed_audio_with_sr(embedder, wav_deno, sr_deno)
 
                             # add to accumulator
-                            key = (embedder.model_name, "audio", NOISE_DENOISED)
+                            key = (MODE_AUDIO, embedder.model_name, NOISE_DENOISED, denoiser_name)
                             accumulator[key]["embeddings"].append(emb)
                             accumulator[key]["segment_ids"].append(segment_id)
                         except Exception as e:
@@ -130,7 +128,7 @@ def embed_segments(segments):
                             emb = _embed_audio_with_sr(embedder, wav_noisy, sr_noisy)
 
                             # add to accumulator
-                            key = (embedder.model_name, "audio", NOISE_NOISY)
+                            key = (MODE_AUDIO, embedder.model_name, NOISE_NOISY, denoiser_name)
                             accumulator[key]["embeddings"].append(emb)
                             accumulator[key]["segment_ids"].append(segment_id)
                         except Exception as e:
@@ -141,7 +139,7 @@ def embed_segments(segments):
                 try:
                     # parameters for embedding
                     emb = embedder.embed(video)
-                    key = (embedder.model_name, "video", NOISE_NONE)
+                    key = (MODE_VIDEO, embedder.model_name, NOISE_NONE, "none")
                     accumulator[key]["embeddings"].append(emb)
                     accumulator[key]["segment_ids"].append(segment_id)
                 except Exception as e:

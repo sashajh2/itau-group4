@@ -30,18 +30,53 @@ CREATE TABLE IF NOT EXISTS segments (
 
 c1.execute("""
 CREATE TABLE IF NOT EXISTS embeddings (
-    embedding_id TEXT PRIMARY KEY,        -- UUID or FAISS-assigned ID
-    segment_id TEXT,                      -- Foreign key to segments table
-    mode TEXT,                            -- "video", "audio", "video_noise", "audio_noise"
-    model_name TEXT,                      -- "OpenL3", etc.
-    embedding_type TEXT,                  -- "raw", "reduced", "contrasted"
-    reducer_id TEXT,                      -- ID of reducer in model store (if applicable)
-    contraster_id TEXT,                   -- ID of contraster in model store (if applicable)
-    embedding_path TEXT,                  -- absolute/relative path to embedding file in Dropbox
+    embedding_id TEXT PRIMARY KEY,        -- UUID (stable)
+    segment_id TEXT NOT NULL,             -- Foreign key to segments table
+    mode TEXT NOT NULL,                   -- "video", "audio"
+    noise TEXT NOT NULL,                  -- "none", "denoised", "noisy"
+    model_name TEXT NOT NULL,             -- "OpenL3", etc.
+    denoiser_name TEXT NOT NULL DEFAULT "none",           -- "demucs", "voicefixer"
+
+    shard_path TEXT NOT NULL,             -- absolute/relative path to embedding file in Dropbox
+    row_index INTEGER NOT NULL,           -- index of the embedding in the shard (0-indexed
+    vector_dim INTEGER NOT NULL,          -- dimension of the embedding
+    dtype TEXT NOT NULL,                  -- data type of the embedding (e.g. float32)
+
+    embedding_type TEXT NOT NULL DEFAULT "raw", -- "raw", "reduced", "contrasted"
+    reducer_id TEXT,                            -- ID of reducer in model store (if applicable)
+    contraster_id TEXT,                         -- ID of contraster in model store (if applicable)
+    
+    version TEXT NOT NULL,                   -- version of the embedding "2025-09-12"
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (segment_id) REFERENCES segments(segment_id)
 );
 """)
+
+# ---------- Helpful indexes & constraints ---------- #
+# Fast lookup by segment_id
+c1.execute("""
+CREATE INDEX IF NOT EXISTS idx_embeddings_segment
+ON embeddings(segment_id);
+""")
+
+# Fast direct access into shards
+c1.execute("""
+CREATE INDEX IF NOT EXISTS idx_embeddings_shard_row
+ON embeddings(shard_path, row_index);
+""")
+
+# Fast queries by model/mode/noise/version
+c1.execute("""
+CREATE INDEX IF NOT EXISTS idx_embeddings_model_part
+ON embeddings(model_name, mode, noise, denoiser_name, version);
+""")
+
+# Prevent duplicates for the same segment + pipeline config
+c1.execute("""
+CREATE UNIQUE INDEX IF NOT EXISTS uq_embed_per_segment_model
+ON embeddings(segment_id, model_name, mode, noise, denoiser_name, version, embedding_type);
+""")
+
 
 conn1.commit()
 conn1.close()
