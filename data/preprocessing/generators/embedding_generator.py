@@ -42,7 +42,8 @@ def embed_segments(segments):
     for e in VIDEO_EMBEDDERS:
         _ = accumulator[(MODE_VIDEO, e.model_name, NOISE_NONE, "none")]
 
-    for i, segment in enumerate(tqdm(segments, desc="Generating embeddings", unit="segment")):
+    test_segments = segments[:1] if segments else []
+    for i, segment in enumerate(tqdm(test_segments, desc="Generating embeddings", unit="segment")):
         segment_id = segment["segment_id"]
         filepath = segment["video_path"]
         start_time = segment["start_time"]
