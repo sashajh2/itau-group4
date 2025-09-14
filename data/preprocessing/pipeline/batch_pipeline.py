@@ -54,32 +54,32 @@ def main():
         num_segments = extract_and_insert_segments(lrs3_root, created_at)
         print(f"Inserted {num_segments} segments for part {part_str}")
 
-    #     # Step 3: Generate embeddings for this created_at; Dropbox appends if exists
-    #     num_segments_processed, num_attempted = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
-    #     print(f"Embeddings: processed={num_segments_processed}, attempted={num_attempted}")
-    #     total_segments += num_segments_processed
-    #     total_attempted += num_attempted
+        # Step 3: Generate embeddings for this created_at; Dropbox appends if exists
+        num_segments_processed, num_attempted = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
+        print(f"Embeddings: processed={num_segments_processed}, attempted={num_attempted}")
+        total_segments += num_segments_processed
+        total_attempted += num_attempted
 
 
-    #     # Step 4: Clean up local zip and extracted directory for this part
-    #     zip_file = os.path.join(args.base_dir, "train", f"train.zip.{part_str}")
-    #     try:
-    #         if os.path.exists(zip_file):
-    #             os.remove(zip_file)
-    #             print(f"🗑️ Deleted {zip_file}")
-    #     except Exception as e:
-    #         print(f"⚠️ Could not delete {zip_file}: {e}")
+        # Step 4: Clean up local zip and extracted directory for this part
+        zip_file = os.path.join(args.base_dir, "train", f"train.zip.{part_str}")
+        try:
+            if os.path.exists(zip_file):
+                os.remove(zip_file)
+                print(f"🗑️ Deleted {zip_file}")
+        except Exception as e:
+            print(f"⚠️ Could not delete {zip_file}: {e}")
 
-    #     try:
-    #         if os.path.exists(extracted_part_dir):
-    #             shutil.rmtree(extracted_part_dir)
-    #             print(f"🗑️ Deleted extracted dir {extracted_part_dir}")
-    #     except Exception as e:
-    #         print(f"⚠️ Could not delete {extracted_part_dir}: {e}")
+        try:
+            if os.path.exists(extracted_part_dir):
+                shutil.rmtree(extracted_part_dir)
+                print(f"🗑️ Deleted extracted dir {extracted_part_dir}")
+        except Exception as e:
+            print(f"⚠️ Could not delete {extracted_part_dir}: {e}")
 
-    # shard_writer.finalize()
-    # print(f"Batch summary: segments={total_segments}, vectors_attempted={total_attempted}, "
-    #       f"uploaded_shards={getattr(shard_writer, 'uploaded_shards', 'n/a')}")
+    shard_writer.finalize()
+    print(f"Batch summary: segments={total_segments}, vectors_attempted={total_attempted}, "
+          f"uploaded_shards={getattr(shard_writer, 'uploaded_shards', 'n/a')}")
 
 if __name__ == "__main__":
     main()
