@@ -54,9 +54,7 @@ def load_video_metadata(base_dir: str) -> pd.DataFrame:
 def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duration_bounds=(0.1, 0.46)) -> pd.DataFrame:
     segment_rows = []
     
-    total_videos = len(video_metadata_df)
     processed_videos = 0
-    skipped_videos = 0
 
     for _, row in video_metadata_df.iterrows():
         # if both fake
@@ -137,14 +135,16 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
         processed_videos += 1
 
     print(f"📊 Video processing summary:")
-    print(f"   Total videos: {total_videos}")
     print(f"   Processed videos: {processed_videos}")
-    print(f"   Skipped videos: {skipped_videos}")
-    print(f"   Expected segments from skipped videos: {skipped_videos * 5}")
 
     return pd.DataFrame(segment_rows)
 
 def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, created_at: str):
+    # Check if there are any segments to insert
+    if len(segment_metadata_df) == 0:
+        print("⚠️  No segments to insert - skipping database insertion")
+        return 0
+    
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -196,84 +196,9 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
     print(f"📊 Insert results: {successful_inserts} successful, {failed_inserts} failed")
 
     conn.commit()
-    
-    # Debug: Count actual inserted segments
-    cursor.execute("SELECT COUNT(*) FROM segments WHERE created_at = ?", (created_at,))
-    actual_count = cursor.fetchone()[0]
-    print(f"🔍 Debug: Actually inserted {actual_count} segments (expected {len(segment_metadata_df)})")
-    
-    # Debug: Check for potential issues
-    if actual_count < len(segment_metadata_df):
-        print(f"⚠️  WARNING: Inserted {actual_count} but expected {len(segment_metadata_df)}")
-        print(f"   Difference: {len(segment_metadata_df) - actual_count} segments missing")
-        
-        # Check if there are duplicate segment_ids that might be getting overwritten
-        cursor.execute("""
-            SELECT segment_id, COUNT(*) as count 
-            FROM segments 
-            WHERE created_at = ? 
-            GROUP BY segment_id 
-            HAVING COUNT(*) > 1
-        """, (created_at,))
-        duplicates = cursor.fetchall()
-        if duplicates:
-            print(f"🔍 Found {len(duplicates)} duplicate segment_ids in database:")
-            for seg_id, count in duplicates[:5]:  # Show first 5
-                print(f"   {seg_id}: {count} occurrences")
-        
-        # Check for duplicate segment_ids in the generated data
-        print(f"🔍 Checking for duplicate segment_ids in generated data...")
-        generated_segment_ids = []
-        for _, row in segment_metadata_df.iterrows():
-            video_path_parts = row['video_path'].split('/')
-            parent_folder = video_path_parts[-3]
-            child_folder = video_path_parts[-2]
-            video_name = os.path.basename(row['video_path']).replace('.mp4', '')
-            segment_ms = int(row['segment_start'] * 1000)
-            segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}_{int(row['segment_end'] * 1000)}"
-            generated_segment_ids.append(segment_id)
-        
-        # Find duplicates in generated data
-        from collections import Counter
-        id_counts = Counter(generated_segment_ids)
-        duplicates_in_generated = {seg_id: count for seg_id, count in id_counts.items() if count > 1}
-        
-        if duplicates_in_generated:
-            print(f"🔍 Found {len(duplicates_in_generated)} duplicate segment_ids in generated data:")
-            for seg_id, count in list(duplicates_in_generated.items())[:5]:
-                print(f"   {seg_id}: {count} occurrences")
-                
-                # Show the rows that generated this duplicate
-                print(f"   Details for {seg_id}:")
-                for i, (_, row) in enumerate(segment_metadata_df.iterrows()):
-                    video_path_parts = row['video_path'].split('/')
-                    parent_folder = video_path_parts[-3]
-                    child_folder = video_path_parts[-2]
-                    video_name = os.path.basename(row['video_path']).replace('.mp4', '')
-                    segment_ms = int(row['segment_start'] * 1000)
-                    current_segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}"
-                    
-                    if current_segment_id == seg_id:
-                        print(f"     Row {i}: video_path={row['video_path']}, start={row['segment_start']}, end={row['segment_end']}")
-        else:
-            print(f"✅ No duplicate segment_ids found in generated data")
-            
-        # Check if any segment_ids already exist in database (from previous runs)
-        print(f"🔍 Checking for pre-existing segment_ids...")
-        existing_count = 0
-        for segment_id in generated_segment_ids:
-            cursor.execute("SELECT COUNT(*) FROM segments WHERE segment_id = ? AND created_at != ?", (segment_id, created_at))
-            if cursor.fetchone()[0] > 0:
-                existing_count += 1
-                if existing_count <= 5:  # Show first 5
-                    print(f"   Pre-existing: {segment_id}")
-        
-        if existing_count > 0:
-            print(f"🔍 Found {existing_count} segment_ids that already exist in database from previous runs")
-    
     conn.close()
     
-    return actual_count  # Return the actual count, not the expected count
+    return successful_inserts
 
 
 def extract_and_insert_segments(video_root: str, created_at: str) -> int:
