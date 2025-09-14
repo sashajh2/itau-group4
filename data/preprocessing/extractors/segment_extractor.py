@@ -53,6 +53,8 @@ def load_video_metadata(base_dir: str) -> pd.DataFrame:
 
 def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duration_bounds=(0.1, 0.46)) -> pd.DataFrame:
     segment_rows = []
+    
+    processed_videos = 0
 
     for _, row in video_metadata_df.iterrows():
         # if both fake
@@ -109,6 +111,8 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
             # randomly sample multiple segments of the real video (5 segments)
             real_duration = get_video_duration(row['video_path'])
             if real_duration is None:
+                print(f"⚠️  Skipping video due to duration error: {row['video_path']}")
+                skipped_videos += 1
                 continue  # skip if there's an error loading
             
             num_real_segments = 5
@@ -127,15 +131,27 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
                     'audio_model': row['audio_model'],
                     'video_model': row['video_model']
                 })
+        
+        processed_videos += 1
+
+    print(f"📊 Video processing summary:")
+    print(f"   Processed videos: {processed_videos}")
 
     return pd.DataFrame(segment_rows)
 
 def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, created_at: str):
+    # Check if there are any segments to insert
+    if len(segment_metadata_df) == 0:
+        print("⚠️  No segments to insert - skipping database insertion")
+        return 0
+    
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     successful_inserts = 0
     failed_inserts = 0
+    
+    print(f"🔍 Starting insertion of {len(segment_metadata_df)} segments...")
     
     for i, (_, row) in enumerate(segment_metadata_df.iterrows()):
         try:
@@ -145,8 +161,12 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
             video_name = os.path.basename(row['video_path']).replace('.mp4', '')
             segment_ms = int(row['segment_start'] * 1000)
 
-            segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}"
+            segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}_{int(row['segment_end'] * 1000)}"
             video_id = f"{parent_folder}/{child_folder}"
+
+            # Debug: Print every 100th segment being processed
+            if i % 100 == 0:
+                print(f"🔍 Processing segment {i}/{len(segment_metadata_df)}: {segment_id}")
 
             cursor.execute("""
                 INSERT OR REPLACE INTO segments (
@@ -170,19 +190,15 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
             failed_inserts += 1
             print(f"❌ Failed to insert segment {i}: {e}")
             print(f"   Row data: {dict(row)}")
+            print(f"   Video path parts: {video_path_parts}")
+            print(f"   Generated segment_id: {segment_id}")
     
     print(f"📊 Insert results: {successful_inserts} successful, {failed_inserts} failed")
 
     conn.commit()
-    
-    # Debug: Count actual inserted segments
-    cursor.execute("SELECT COUNT(*) FROM segments WHERE created_at = ?", (created_at,))
-    actual_count = cursor.fetchone()[0]
-    print(f"🔍 Debug: Actually inserted {actual_count} segments (expected {len(segment_metadata_df)})")
-    
     conn.close()
     
-    return actual_count  # Return the actual count, not the expected count
+    return successful_inserts
 
 
 def extract_and_insert_segments(video_root: str, created_at: str) -> int:

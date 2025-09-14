@@ -6,7 +6,7 @@ from dropbox_utils.dropbox_utils import get_client, upload_file
 import re
 from db.embedding_store_utils import insert_many_embeddings  # implement batch insert
 
-TARGET_SHARD_BYTES = 512 * 1024 * 1024  # 512 MB
+TARGET_SHARD_BYTES = 64 * 1024 * 1024  # 64 MB
 DTYPE = "float32"
 
 def approx_bytes(n_rows, dim, dtype):
