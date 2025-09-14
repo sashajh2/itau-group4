@@ -18,6 +18,12 @@ credentials.json
 data/temp_video_extracted/
 data/faiss_indexes/
 
+# Ignore retrieved embeddings
+embeddings/retrieved/
+
+# Ignore large database files
+db/embeddings.sqlite3
+
 # Ignore pretrained model weights
 models/pretrained/senet/senet50_ft_weight.pkl
 
