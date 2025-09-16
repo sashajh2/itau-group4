@@ -23,10 +23,10 @@ def main():
     db_path = config["database"]["embedding_db_path"]
 
     # One writer for the whole batch
-    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="AVDeepfake1M", version=args.version)
+    run_id = f"{args.start}_{args.end}"
+    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="AVDeepfake1M", version=args.version, run_id=run_id)
     
     total_segments = 0
-    total_uploaded_shards = 0
     total_attempted = 0
 
     for part in tqdm(range(args.start, args.end + 1), desc="Processing parts", unit="part"):
@@ -55,10 +55,10 @@ def main():
         print(f"Inserted {num_segments} segments for part {part_str}")
 
         # Step 3: Generate embeddings for this created_at; Dropbox appends if exists
-        num_segments_processed, num_attempted = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
-        print(f"Embeddings: processed={num_segments_processed}, attempted={num_attempted}")
+        num_segments_processed, num_embeddings = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
+        print(f"Processed: segments={num_segments_processed}, embeddings={num_embeddings}")
         total_segments += num_segments_processed
-        total_attempted += num_attempted
+        total_attempted += num_embeddings
 
 
         # Step 4: Clean up local zip and extracted directory for this part
