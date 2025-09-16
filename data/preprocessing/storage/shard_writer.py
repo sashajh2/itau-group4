@@ -49,7 +49,7 @@ class ShardWriter:
     def _check_run_collision(self, model, mode, noise, denoiser_name, shard_idx):
         if shard_idx != 0 or self.allow_overwrite:
             return
-        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version) + f"{self.run_id}/"
+        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version)
         shard_name = f"shard_{self.run_id}_{shard_idx:03d}.npy"
         shard_dbx = d_dir + shard_name
         try:
@@ -74,8 +74,8 @@ class ShardWriter:
         segs = st["segs"]
         N, D = embs.shape
 
-        # local write (include run_id)
-        local_dir = os.path.join(self.tmp_dir, model, mode, noise, denoiser_name or "none", f"v{self.version}", self.run_id)
+        # local write
+        local_dir = os.path.join(self.tmp_dir, model, mode, noise, denoiser_name or "none", f"v{self.version}")
         os.makedirs(local_dir, exist_ok=True)
         shard_name = f"shard_{self.run_id}_{st['shard_idx']:03d}"
         npy_local = os.path.join(local_dir, shard_name + ".npy")
@@ -88,7 +88,7 @@ class ShardWriter:
             }, f, indent=2)
 
         # dropbox path
-        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version) + f"{self.run_id}/"
+        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version)
         shard_dbx = d_dir + shard_name + ".npy"
         meta_dbx  = d_dir + shard_name + ".meta.json"
 
