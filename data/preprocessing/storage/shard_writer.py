@@ -4,7 +4,6 @@ import numpy as np
 from datetime import datetime, timezone
 from dropbox_utils.dropbox_utils import get_client, upload_file
 from .dropbox_storage import check_dropbox_file_exists
-import re
 from db.embedding_store_utils import insert_many_embeddings  # implement batch insert
 
 TARGET_SHARD_BYTES = 64 * 1024 * 1024  # 64 MB
@@ -16,48 +15,6 @@ def approx_bytes(n_rows, dim, dtype):
 def partition_dir(root, source, model, mode, noise, denoiser_name, version):
     dn = "none" if denoiser_name in (None, "", "none") else denoiser_name
     return f"{root}/{source}/raw/{mode}/{noise}/{model}/{dn}/v{version}/"
-
-def find_existing_shards(dropbox_path):
-    """Find existing shard files in Dropbox and return the highest shard index."""
-    try:
-        dbx = get_client()
-        # List files in the partition directory
-        result = dbx.files_list_folder(dropbox_path)
-        
-        shard_indices = []
-        for entry in result.entries:
-            if entry.name.endswith('.npy') and entry.name.startswith('shard_'):
-                # Extract shard index from filename like "shard_000.npy"
-                match = re.match(r'shard_(\d+)\.npy', entry.name)
-                if match:
-                    shard_indices.append(int(match.group(1)))
-        
-        return max(shard_indices) if shard_indices else -1
-    except Exception as e:
-        print(f"⚠️ Could not list existing shards in {dropbox_path}: {e}")
-        return -1
-
-def load_last_shard(dropbox_path, shard_index):
-    """Load the last shard from Dropbox to continue adding to it."""
-    try:
-        dbx = get_client()
-        shard_path = f"{dropbox_path}shard_{shard_index:03d}.npy"
-        meta_path = f"{dropbox_path}shard_{shard_index:03d}.meta.json"
-        
-        # Download shard file
-        _, response = dbx.files_download(shard_path)
-        embeddings = np.load(response.content)
-        
-        # Download metadata
-        _, meta_response = dbx.files_download(meta_path)
-        metadata = json.loads(meta_response.content.decode())
-        
-        print(f"📥 Loaded existing shard {shard_index} with {len(embeddings)} embeddings")
-        return embeddings, metadata
-    except Exception as e:
-        print(f"⚠️ Could not load shard {shard_index}: {e}")
-        return None, None
-
 
 class ShardWriter:
     def __init__(self, dropbox_root, db_path, source, version, run_id=None, tmp_dir="/tmp/emb", allow_overwrite=False):
