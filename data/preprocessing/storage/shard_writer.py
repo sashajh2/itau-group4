@@ -3,6 +3,7 @@ import os, json, uuid
 import numpy as np
 from datetime import datetime, timezone
 from dropbox_utils.dropbox_utils import get_client, upload_file
+from .dropbox_storage import check_dropbox_file_exists
 import re
 from db.embedding_store_utils import insert_many_embeddings  # implement batch insert
 
@@ -59,23 +60,22 @@ def load_last_shard(dropbox_path, shard_index):
 
 
 class ShardWriter:
-    def __init__(self, dropbox_root, db_path, source, version, tmp_dir="/tmp/emb"):
+    def __init__(self, dropbox_root, db_path, source, version, run_id=None, tmp_dir="/tmp/emb", allow_overwrite=False):
         self.dropbox_root = dropbox_root
         self.db_path = db_path
         self.source = source
         self.version = version
+        self.run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self.tmp_dir = tmp_dir
-        self.buf = defaultdict(lambda: {"embs": [], "segs": [], "dim": None, "shard_idx": 0, "loaded_from_existing": False})
+        self.allow_overwrite = allow_overwrite
+        self.buf = defaultdict(lambda: {"embs": [], "segs": [], "dim": None, "shard_idx": 0, "collision_checked": False})
 
     def add(self, model, mode, noise, denoiser_name, segment_id, emb):
         key = (model, mode, noise, denoiser_name or None)
         st = self.buf[key]
         emb = np.asarray(emb, dtype=np.float32)
         
-        # Check for existing shards on first use
-        if not st["loaded_from_existing"]:
-            self._check_and_load_existing_shard(key, model, mode, noise, denoiser_name)
-            st["loaded_from_existing"] = True
+        # No continuation logic; start fresh per run_id
         
         if st["dim"] is None:
             st["dim"] = emb.shape[0]
@@ -89,42 +89,21 @@ class ShardWriter:
         if approx_bytes(len(st["embs"]), st["dim"], DTYPE) >= TARGET_SHARD_BYTES:
             self._flush_key(key)
 
-    def _check_and_load_existing_shard(self, key, model, mode, noise, denoiser_name):
-        """Check for existing shards and load the last one if it's not full."""
-        st = self.buf[key]
-        
-        # Get the Dropbox path for this partition
-        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version)
-        
-        # Find the highest existing shard index
-        max_shard_idx = find_existing_shards(d_dir)
-        
-        if max_shard_idx >= 0:
-            # Load the last shard to check if it's full
-            existing_embeddings, metadata = load_last_shard(d_dir, max_shard_idx)
-            
-            if existing_embeddings is not None and metadata is not None:
-                # Check if the last shard is under the size limit
-                current_size = approx_bytes(len(existing_embeddings), existing_embeddings.shape[1], DTYPE)
-                
-                if current_size < TARGET_SHARD_BYTES:
-                    # Load the existing shard to continue adding to it
-                    st["embs"] = existing_embeddings.tolist()
-                    st["shard_idx"] = max_shard_idx
-                    st["dim"] = existing_embeddings.shape[1]
-                    print(f"📥 Continuing with existing shard {max_shard_idx} (size: {current_size/1024/1024:.1f}MB)")
-                else:
-                    # Last shard is full, start a new one
-                    st["shard_idx"] = max_shard_idx + 1
-                    print(f"📦 Last shard {max_shard_idx} is full, starting shard {st['shard_idx']}")
+    def _check_run_collision(self, model, mode, noise, denoiser_name, shard_idx):
+        if shard_idx != 0 or self.allow_overwrite:
+            return
+        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version) + f"{self.run_id}/"
+        shard_name = f"shard_{self.run_id}_{shard_idx:03d}.npy"
+        shard_dbx = d_dir + shard_name
+        try:
+            if check_dropbox_file_exists(shard_dbx):
+                raise RuntimeError(f"Run collision: {shard_dbx} already exists. Use a different run_id or enable allow_overwrite.")
+        except Exception as e:
+            # Propagate unexpected errors
+            if not (isinstance(e, RuntimeError)):
+                raise e
             else:
-                # Couldn't load existing shard, start fresh
-                st["shard_idx"] = max_shard_idx + 1
-                print(f"⚠️ Could not load existing shard, starting fresh at index {st['shard_idx']}")
-        else:
-            # No existing shards, start from 0
-            st["shard_idx"] = 0
-            print(f"🆕 No existing shards found, starting fresh at index 0")
+                raise e
 
     def finalize(self):
         for key in list(self.buf.keys()):
@@ -138,10 +117,10 @@ class ShardWriter:
         segs = st["segs"]
         N, D = embs.shape
 
-        # local write
-        local_dir = os.path.join(self.tmp_dir, model, mode, noise, denoiser_name or "none", f"v{self.version}")
+        # local write (include run_id)
+        local_dir = os.path.join(self.tmp_dir, model, mode, noise, denoiser_name or "none", f"v{self.version}", self.run_id)
         os.makedirs(local_dir, exist_ok=True)
-        shard_name = f"shard_{st['shard_idx']:03d}"
+        shard_name = f"shard_{self.run_id}_{st['shard_idx']:03d}"
         npy_local = os.path.join(local_dir, shard_name + ".npy")
         meta_local = os.path.join(local_dir, shard_name + ".meta.json")
         np.save(npy_local, embs)
@@ -152,9 +131,14 @@ class ShardWriter:
             }, f, indent=2)
 
         # dropbox path
-        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version)
+        d_dir = partition_dir(self.dropbox_root, self.source, model, mode, noise, denoiser_name, self.version) + f"{self.run_id}/"
         shard_dbx = d_dir + shard_name + ".npy"
         meta_dbx  = d_dir + shard_name + ".meta.json"
+
+        # collision check once per key before first upload
+        if not st.get("collision_checked", False):
+            self._check_run_collision(model, mode, noise, denoiser_name, st["shard_idx"])
+            st["collision_checked"] = True
 
         # Upload files using the existing upload_file function with error handling
         try:

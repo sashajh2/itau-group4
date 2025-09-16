@@ -25,7 +25,8 @@ def main():
     db_path = config["database"]["embedding_db_path"]
 
     # One writer for the whole batch
-    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="ShareVeo3", version=args.version)
+    run_id = f"{args.start}_{args.end}"
+    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="ShareVeo3", version=args.version, run_id=run_id)
 
     # Validate part numbers
     if args.start < 1 or args.start > 50:

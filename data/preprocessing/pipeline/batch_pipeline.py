@@ -23,7 +23,8 @@ def main():
     db_path = config["database"]["embedding_db_path"]
 
     # One writer for the whole batch
-    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="AVDeepfake1M", version=args.version)
+    run_id = f"{args.start}_{args.end}"
+    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="AVDeepfake1M", version=args.version, run_id=run_id)
     
     total_segments = 0
     total_attempted = 0
