@@ -21,6 +21,9 @@ data/faiss_indexes/
 # Ignore retrieved embeddings
 embeddings/retrieved/
 
+# Ignore sqlite tables
+sqlite3_tables/
+
 # Ignore pretrained model weights
 models/pretrained/senet/senet50_ft_weight.pkl
 
