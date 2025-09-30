@@ -29,3 +29,4 @@ instaloader
 # Hugging Face Hub for dataset downloads
 huggingface_hub[hf_xet]
 requests
+psycopg2-binary==2.9.9
