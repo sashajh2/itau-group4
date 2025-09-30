@@ -6,11 +6,12 @@ from ..generators.embedding_saver import (
     insert_embeddings_to_db,
 )
 from ..storage.shard_writer import ShardWriter
+from ..storage.neon_writer import NeonEmbeddingWriter
 from ..storage.dropbox_storage import create_faiss_index_and_upload
 import argparse
 import os
 
-def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/generated", shard_writer: ShardWriter = None) -> tuple[int, int]:
+def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/generated", shard_writer: ShardWriter = None, neon_version: str | None = None) -> tuple[int, int]:
     """
     Generate embeddings for all segments with the given created_at.
 
@@ -38,16 +39,25 @@ def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/gen
     print("✅ Embedding generation complete")
 
     attempted = 0
-    if shard_writer is None:
-        raise ValueError("shard_writer cannot be None")
+    neon_writer = None
+    if shard_writer is None and neon_version is None:
+        raise ValueError("Provide either shard_writer or neon_version for Neon insertion")
+    if neon_version is not None:
+        neon_writer = NeonEmbeddingWriter(version=neon_version)
     
     for (mode, model, noise, denoiser_name), data in accumulator.items():
         embs = data["embeddings"]
         seg_ids = data["segment_ids"]
         for seg_id, emb in zip(seg_ids, embs):
-            shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
+            if neon_writer is not None:
+                neon_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
+            else:
+                shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
             attempted += 1
 
+    if neon_writer is not None:
+        neon_writer.flush_all()
+        neon_writer.close()
     return len(segments), attempted
 
 

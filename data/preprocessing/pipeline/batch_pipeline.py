@@ -22,9 +22,8 @@ def main():
     config = load_config()
     db_path = config["database"]["embedding_db_path"]
 
-    # One writer for the whole batch
-    run_id = f"{args.start}_{args.end}"
-    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="AVDeepfake1M", version=args.version, run_id=run_id)
+    # One Neon version tag for the whole batch (use pooler URL in config)
+    neon_version = args.version
     
     total_segments = 0
     total_attempted = 0
@@ -54,8 +53,9 @@ def main():
         num_segments = extract_and_insert_segments(lrs3_root, created_at)
         print(f"Inserted {num_segments} segments for part {part_str}")
 
-        # Step 3: Generate embeddings for this created_at; Dropbox appends if exists
-        num_segments_processed, num_embeddings = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
+        # Step 3: Generate embeddings for this created_at; write to Neon (batched)
+        # num_segments_processed, num_embeddings = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
+        num_segments_processed, num_embeddings = generate_for_created_at(created_at, "./embeddings/generated", shard_writer=None, neon_version=neon_version)
         print(f"Processed: segments={num_segments_processed}, embeddings={num_embeddings}")
         total_segments += num_segments_processed
         total_attempted += num_embeddings
@@ -77,9 +77,8 @@ def main():
         except Exception as e:
             print(f"⚠️ Could not delete {extracted_part_dir}: {e}")
 
-    shard_writer.finalize()
-    print(f"Batch summary: segments={total_segments}, vectors_attempted={total_attempted}, "
-          f"uploaded_shards={getattr(shard_writer, 'uploaded_shards', 'n/a')}")
+    # Summary (Neon write path)
+    print(f"Batch summary: segments={total_segments}, vectors_attempted={total_attempted}")
 
 if __name__ == "__main__":
     main()
