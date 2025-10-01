@@ -1,145 +1,84 @@
 #!/usr/bin/env python3
 """
-Retrieve embeddings and labels for a specific model and version.
+Retrieve embeddings and labels from Neon Postgres (pgvector) for a specific model and version.
 
 This script:
-1. Retrieves all embeddings from different shards for a given model/version
-2. Stitches them together into a single .npy file
-3. Pairs them with corresponding labels from the segments table
-4. Returns both embeddings and labels as easily loadable files
+1. Queries Neon directly for a given model/version (and optional filters)
+2. Joins to segments to fetch labels
+3. Saves either:
+   - Two arrays (embeddings.npy, labels.npy) in a single NPZ file (default), or
+   - One combined N x (D+1) .npy file with last column = label (if --combine)
 
 Usage:
-    python scripts/retrieve_embeddings.py --model hubert --version 2025-09-12 --mode audio --noise none
+    python scripts/retrieve_embeddings.py --model hubert --version 2025-09-12
 """
 
 import argparse
 import os
-import sqlite3
+from typing import Optional, Tuple
 import numpy as np
-import pickle
-from typing import List, Dict, Tuple, Optional
-from pathlib import Path
-import tempfile
-import shutil
+import psycopg2
 
 from utils.config_loader import load_config
-from dropbox_utils.dropbox_utils import download_file
 
 
-def get_embedding_metadata(db_path: str, model_name: str, version: str, 
-                          mode: Optional[str] = None, noise: Optional[str] = None,
-                          denoiser_name: Optional[str] = None) -> List[Dict]:
-    """
-    Retrieve embedding metadata from the database for a specific model and version.
-    
-    Args:
-        db_path: Path to the SQLite database
-        model_name: Name of the model (e.g., 'hubert', 'openl3', 'senet')
-        version: Version string (e.g., '2025-09-12')
-        mode: Optional mode filter ('audio' or 'video')
-        noise: Optional noise filter ('none', 'denoised', 'noisy')
-        denoiser_name: Optional denoiser filter ('demucs', 'voicefixer', etc.)
-    
-    Returns:
-        List of embedding metadata dictionaries
-    """
-    with sqlite3.connect(db_path) as conn:
-        cursor = conn.cursor()
-        
-        # Build query with optional filters
-        query = """
-            SELECT embedding_id, segment_id, mode, noise, model_name, denoiser_name,
-                   shard_path, row_index, vector_dim, dtype, version
-            FROM embeddings 
-            WHERE model_name = ? AND version = ?
-        """
-        params = [model_name, version]
-        
-        if mode is not None:
-            query += " AND mode = ?"
-            params.append(mode)
-        
-        if noise is not None:
-            query += " AND noise = ?"
-            params.append(noise)
-            
-        if denoiser_name is not None:
-            query += " AND denoiser_name = ?"
-            params.append(denoiser_name)
-        
-        query += " ORDER BY shard_path, row_index"
-        
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        
-        columns = [desc[0] for desc in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+_SPACE_TO_TABLE = {
+    ("audio", "hubert"): ("embeddings_audio_hubert", "audio_label"),
+    ("audio", "openl3"): ("embeddings_audio_openl3", "audio_label"),
+    ("video", "senet"): ("embeddings_video_senet", "video_label"),
+}
 
 
-def get_segment_labels(db_path: str, segment_ids: List[str], mode: str) -> Dict[str, int]:
-    """
-    Retrieve labels for segments based on the mode.
-    
-    Args:
-        db_path: Path to the SQLite database
-        segment_ids: List of segment IDs to get labels for
-        mode: 'audio' or 'video' to determine which label to retrieve
-    
-    Returns:
-        Dictionary mapping segment_id to label
-    """
-    with sqlite3.connect(db_path) as conn:
-        cursor = conn.cursor()
-        
-        # Create placeholders for the IN clause
-        placeholders = ','.join(['?'] * len(segment_ids))
-        
-        if mode == 'audio':
-            label_column = 'audio_label'
-        elif mode == 'video':
-            label_column = 'video_label'
+def _connect_neon():
+    cfg = load_config()
+    dsn = cfg["database"]["postgres"]["neon_database_url"]
+    return psycopg2.connect(dsn)
+
+
+def _fetch_embeddings_and_labels(model_name: str, version: str, mode: Optional[str], noise: Optional[str], denoiser: Optional[str]):
+    # Determine table and label column
+    if mode is None:
+        # Infer mode from model
+        if model_name in ("hubert", "openl3"):
+            mode = "audio"
+        elif model_name == "senet":
+            mode = "video"
         else:
-            raise ValueError(f"Mode must be 'audio' or 'video', got: {mode}")
-        
-        query = f"""
-            SELECT segment_id, {label_column}
-            FROM segments 
-            WHERE segment_id IN ({placeholders})
-        """
-        
-        cursor.execute(query, segment_ids)
-        rows = cursor.fetchall()
-        
-        return {segment_id: label for segment_id, label in rows}
+            raise ValueError("Provide --mode for unknown model")
+    key = (mode.lower(), model_name.lower())
+    if key not in _SPACE_TO_TABLE:
+        raise ValueError(f"Unsupported model/mode: {key}")
+    table, label_col = _SPACE_TO_TABLE[key]
 
+    where = ["e.version = %s"]
+    params = [version]
+    if noise is not None:
+        where.append("e.noise = %s")
+        params.append(noise)
+    if denoiser is not None:
+        where.append("e.denoiser_name = %s")
+        params.append(denoiser)
+    where_sql = " AND ".join(where)
 
-def download_and_load_shard(shard_path: str, temp_dir: str) -> np.ndarray:
+    sql = f"""
+      SELECT e.segment_id,
+             e.embedding::float4[] AS emb,
+             s.{label_col} AS label
+      FROM {table} e
+      JOIN segments s USING (segment_id)
+      WHERE {where_sql}
+      ORDER BY e.segment_id
     """
-    Download a shard file from Dropbox and load it as a numpy array.
-    
-    Args:
-        shard_path: Dropbox path to the shard file
-        temp_dir: Temporary directory to download to
-    
-    Returns:
-        Numpy array containing the embeddings from the shard
-    """
-    # Create local filename
-    local_filename = os.path.basename(shard_path)
-    local_path = os.path.join(temp_dir, local_filename)
-    
-    # Download the file
-    print(f"Downloading {shard_path}...")
-    metadata = download_file(shard_path, local_path)
-    
-    if metadata is None:
-        raise RuntimeError(f"Failed to download {shard_path}")
-    
-    # Load the numpy array
-    embeddings = np.load(local_path)
-    print(f"Loaded shard with shape {embeddings.shape}")
-    
-    return embeddings
+
+    with _connect_neon() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+    # rows: (segment_id, list_of_floats, label)
+    seg_ids = [r[0] for r in rows]
+    embs = [np.array(r[1], dtype=np.float32) for r in rows]
+    labels = np.array([int(r[2]) for r in rows], dtype=np.int64)
+    return seg_ids, np.vstack(embs) if embs else np.zeros((0, 0), dtype=np.float32), labels, table
 
 
 def retrieve_embeddings_and_labels(
@@ -148,7 +87,8 @@ def retrieve_embeddings_and_labels(
     mode: Optional[str] = None,
     noise: Optional[str] = None,
     denoiser_name: Optional[str] = None,
-    output_dir: str = "./embeddings/retrieved"
+    output_dir: str = "./embeddings/retrieved",
+    combine: bool = False,
 ) -> Tuple[str, str]:
     """
     Retrieve all embeddings and labels for a specific model and version.
@@ -164,10 +104,6 @@ def retrieve_embeddings_and_labels(
     Returns:
         Tuple of (embeddings_file_path, labels_file_path)
     """
-    # Load configuration
-    config = load_config()
-    db_path = config["database"]["embedding_db_path"]
-    
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
@@ -179,77 +115,14 @@ def retrieve_embeddings_and_labels(
     if denoiser_name:
         print(f"  Denoiser filter: {denoiser_name}")
     
-    # Get embedding metadata
-    print("Querying database for embedding metadata...")
-    embedding_metadata = get_embedding_metadata(
-        db_path, model_name, version, mode, noise, denoiser_name
+    # Fetch from Neon directly
+    seg_ids, all_embeddings, all_labels, table = _fetch_embeddings_and_labels(
+        model_name, version, mode, noise, denoiser_name
     )
-    
-    if not embedding_metadata:
-        raise ValueError(f"No embeddings found for model={model_name}, version={version}")
-    
-    print(f"Found {len(embedding_metadata)} embeddings")
-    
-    # Group by shard path
-    shard_groups = {}
-    for emb in embedding_metadata:
-        shard_path = emb['shard_path']
-        if shard_path not in shard_groups:
-            shard_groups[shard_path] = []
-        shard_groups[shard_path].append(emb)
-    
-    print(f"Found {len(shard_groups)} unique shards")
-    
-    # Create temporary directory for downloads
-    with tempfile.TemporaryDirectory() as temp_dir:
-        print(f"Using temporary directory: {temp_dir}")
-        
-        # Download and process each shard
-        all_embeddings = []
-        all_segment_ids = []
-        all_labels = []
-        
-        for shard_path, embeddings_in_shard in shard_groups.items():
-            print(f"\nProcessing shard: {os.path.basename(shard_path)}")
-            print(f"  Contains {len(embeddings_in_shard)} embeddings")
-            
-            # Download and load the shard
-            shard_embeddings = download_and_load_shard(shard_path, temp_dir)
-            
-            # Extract embeddings and segment IDs in the correct order
-            for emb_meta in embeddings_in_shard:
-                row_idx = emb_meta['row_index']
-                segment_id = emb_meta['segment_id']
-                
-                # Extract the specific embedding
-                embedding = shard_embeddings[row_idx]
-                all_embeddings.append(embedding)
-                all_segment_ids.append(segment_id)
-        
-        print(f"\nTotal embeddings collected: {len(all_embeddings)}")
-        
-        # Convert to numpy arrays
-        all_embeddings = np.array(all_embeddings)
-        print(f"Final embeddings shape: {all_embeddings.shape}")
-        
-        # Get labels for all segments
-        print("Retrieving segment labels...")
-        if mode:
-            # Use the specified mode
-            label_mode = mode
-        else:
-            # Try to infer mode from the first embedding
-            label_mode = embedding_metadata[0]['mode']
-        
-        print(f"Using mode '{label_mode}' for label retrieval")
-        segment_labels = get_segment_labels(db_path, all_segment_ids, label_mode)
-        
-        # Create labels array in the same order as embeddings
-        all_labels = [segment_labels[seg_id] for seg_id in all_segment_ids]
-        all_labels = np.array(all_labels)
-        
-        print(f"Labels shape: {all_labels.shape}")
-        print(f"Label distribution: {np.bincount(all_labels)}")
+    if all_embeddings.size == 0:
+        raise ValueError("No embeddings found")
+    print(f"Rows: {len(seg_ids)} | dim: {all_embeddings.shape[1]} | table: {table}")
+    print(f"Label distribution: {np.bincount(all_labels)}")
     
     # Create output filenames
     filename_parts = [model_name, version]
@@ -261,47 +134,36 @@ def retrieve_embeddings_and_labels(
         filename_parts.append(denoiser_name)
     
     base_filename = "_".join(filename_parts)
-    embeddings_file = os.path.join(output_dir, f"{base_filename}_embeddings.npy")
-    labels_file = os.path.join(output_dir, f"{base_filename}_labels.pkl")
-    
-    # Save embeddings
-    print(f"\nSaving embeddings to: {embeddings_file}")
-    np.save(embeddings_file, all_embeddings)
-    
-    # Save labels and metadata
-    print(f"Saving labels to: {labels_file}")
-    labels_data = {
-        'labels': all_labels,
-        'segment_ids': all_segment_ids,
-        'model_name': model_name,
-        'version': version,
-        'mode': label_mode,
-        'noise': noise,
-        'denoiser_name': denoiser_name,
-        'num_embeddings': len(all_embeddings),
-        'embedding_dim': all_embeddings.shape[1] if len(all_embeddings.shape) > 1 else 0
-    }
-    
-    with open(labels_file, 'wb') as f:
-        pickle.dump(labels_data, f)
-    
-    print(f"\n✅ Successfully retrieved embeddings and labels!")
-    print(f"   Embeddings: {embeddings_file}")
-    print(f"   Labels: {labels_file}")
-    print(f"   Shape: {all_embeddings.shape}")
-    print(f"   Labels: {len(all_labels)} (0: {np.sum(all_labels == 0)}, 1: {np.sum(all_labels == 1)})")
-    
-    return embeddings_file, labels_file
+    if combine:
+        combined = np.concatenate([all_embeddings, all_labels.reshape(-1, 1).astype(np.float32)], axis=1)
+        out_path = os.path.join(output_dir, f"{base_filename}_combined.npy")
+        np.save(out_path, combined)
+        print(f"\n✅ Saved combined array to: {out_path} (shape={combined.shape})")
+        return out_path, out_path
+    else:
+        out_path = os.path.join(output_dir, f"{base_filename}.npz")
+        np.savez(out_path,
+                 embeddings=all_embeddings,
+                 labels=all_labels,
+                 segment_ids=np.array(seg_ids),
+                 model_name=model_name,
+                 version=version,
+                 mode=mode,
+                 noise=noise,
+                 denoiser_name=denoiser_name)
+        print(f"\n✅ Saved to: {out_path} (embeddings shape={all_embeddings.shape})")
+        return out_path, out_path
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Retrieve embeddings and labels for a specific model and version")
+    parser = argparse.ArgumentParser(description="Retrieve embeddings+labels from Neon for a specific model/version")
     parser.add_argument("--model", type=str, required=True, help="Model name (e.g., hubert, openl3, senet)")
     parser.add_argument("--version", type=str, required=True, help="Version string (e.g., 2025-09-12)")
     parser.add_argument("--mode", type=str, choices=['audio', 'video'], help="Mode filter (optional)")
     parser.add_argument("--noise", type=str, choices=['none', 'denoised', 'noisy'], help="Noise filter (optional)")
     parser.add_argument("--denoiser", type=str, help="Denoiser filter (optional, e.g., demucs, voicefixer)")
     parser.add_argument("--output-dir", type=str, default="./embeddings/retrieved", help="Output directory")
+    parser.add_argument("--combine", action="store_true", help="Save single combined .npy with last column = label")
     
     args = parser.parse_args()
     
@@ -312,16 +174,11 @@ def main():
             mode=args.mode,
             noise=args.noise,
             denoiser_name=args.denoiser,
-            output_dir=args.output_dir
+            output_dir=args.output_dir,
+            combine=args.combine
         )
         
-        print(f"\n🎉 Files saved successfully!")
-        print(f"To load the data:")
-        print(f"  embeddings = np.load('{embeddings_file}')")
-        print(f"  with open('{labels_file}', 'rb') as f:")
-        print(f"      labels_data = pickle.load(f)")
-        print(f"      labels = labels_data['labels']")
-        print(f"      segment_ids = labels_data['segment_ids']")
+        print(f"\n🎉 Files saved successfully at {labels_file}")
         
     except Exception as e:
         print(f"❌ Error: {e}")
