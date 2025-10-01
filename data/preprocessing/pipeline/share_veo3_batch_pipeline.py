@@ -7,7 +7,7 @@ from data.loaders.share_veo3 import download_and_extract_part, cleanup_files
 from data.preprocessing.extractors.share_veo3_segment_extractor import extract_and_insert_share_veo3_segments
 from data.preprocessing.pipeline.embedding_pipeline import generate_for_created_at
 from utils.config_loader import load_config
-from ..storage.shard_writer import ShardWriter
+from ..storage.shard_writer import ShardWriter  # kept for reference; Neon path is default
 
 
 def main():
@@ -20,13 +20,9 @@ def main():
     parser.add_argument("--version", type=str, default="2025-09-12", help="Version string for shard writer")
     args = parser.parse_args()
 
-    # Init shard writer dependencies
+    # Init config; Neon path is default (uses pooler URL in config)
     config = load_config()
-    db_path = config["database"]["embedding_db_path"]
-
-    # One writer for the whole batch
-    run_id = f"{args.start}_{args.end}"
-    shard_writer = ShardWriter(dropbox_root="/embedding_store", db_path=db_path, source="ShareVeo3", version=args.version, run_id=run_id)
+    neon_version = args.version
 
     # Validate part numbers
     if args.start < 1 or args.start > 50:
@@ -78,9 +74,10 @@ def main():
             print(f"✅ Inserted {num_segments} segments for part {part_str}")
             print(f"📅 Created at timestamp: {created_at}")
 
-            # Step 3: Generate embeddings for this created_at
+            # Step 3: Generate embeddings for this created_at (Neon write)
             print(f"🧠 Step 3: Generating embeddings...")
-            num_segments_processed, num_embeddings = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
+            # num_segments_processed, num_embeddings = generate_for_created_at(created_at, "./embeddings/generated", shard_writer)
+            num_segments_processed, num_embeddings = generate_for_created_at(created_at, "./embeddings/generated", shard_writer=None, neon_version=neon_version)
             print(f"✅ Processed: segments={num_segments_processed}, embeddings={num_embeddings}")
 
             # Step 4: Clean up if requested
@@ -97,9 +94,6 @@ def main():
             print(f"❌ Error processing part {part_str}: {e}")
             print(f"⚠️ Continuing with next part...")
             continue
-
-    # Flush any remaining buffers to shards
-    shard_writer.finalize()
 
     print(f"\n{'='*60}")
     print(f"🏁 ShareVeo3 batch processing completed!")
