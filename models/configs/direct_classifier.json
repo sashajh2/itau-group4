@@ -1,0 +1,21 @@
+{
+    "name": "direct_classifier",
+    "model_config": {
+        "type": "direct_classifier",
+        "classifier_dims": [256, 128, 64]
+    },
+    "training_config": {
+        "stage_a": false,
+        "stage_b": true,
+        "stage_a_epochs": 0,
+        "stage_b_epochs": 10,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4
+    },
+    "evaluation_config": {
+        "mahalanobis": false,
+        "linear_probe": true,
+        "mlp_classifier": true,
+        "knn": false
+    }
+}

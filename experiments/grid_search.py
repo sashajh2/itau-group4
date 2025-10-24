@@ -1,8 +1,15 @@
 # experiments/grid_search.py
-from itertools import product
-import json
+"""
+Hyperparameter grid search for deepfake detection models.
+"""
 
-def run_hyperparameter_search():
+import json
+from itertools import product
+from pathlib import Path
+from training.trainer import ModelTrainer
+from data.data_loader import load_data
+
+def run_hyperparameter_search(output_dir: str = './results'):
     """Run comprehensive hyperparameter search"""
     
     # Define search spaces
@@ -41,12 +48,13 @@ def run_hyperparameter_search():
     ]
     
     # Load data
-    data_loaders = load_data()  # Your data loading function
+    data_loaders = load_data()
     
     results = []
     
-    for model_config, training_config, eval_config in product(model_configs, training_configs, evaluation_configs):
-        print(f"Testing: {model_config['type']} + {training_config}")
+    for i, (model_config, training_config, eval_config) in enumerate(product(model_configs, training_configs, evaluation_configs)):
+        print(f"Experiment {i+1}/{len(model_configs) * len(training_configs) * len(evaluation_configs)}")
+        print(f"Model: {model_config['type']}, Training: {training_config}")
         
         trainer = ModelTrainer()
         result = trainer.train_and_evaluate(
@@ -55,6 +63,7 @@ def run_hyperparameter_search():
         
         # Store results
         experiment_result = {
+            'experiment_id': i,
             'model_config': model_config,
             'training_config': training_config,
             'evaluation_config': eval_config,
@@ -63,7 +72,11 @@ def run_hyperparameter_search():
         results.append(experiment_result)
     
     # Save results
-    with open('hyperparameter_search_results.json', 'w') as f:
+    output_path = Path(output_dir) / 'hyperparameter_search_results.json'
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
     
+    print(f"Grid search results saved to {output_path}")
     return results

@@ -1,0 +1,25 @@
+{
+    "name": "orthogonal_model",
+    "model_config": {
+        "type": "orthogonal",
+        "use_adapter": true,
+        "adapter_hidden_dim": 256,
+        "adapter_layers": 2,
+        "head_dim": 128,
+        "classifier_hidden_dim": 64
+    },
+    "training_config": {
+        "stage_a": true,
+        "stage_b": true,
+        "stage_a_epochs": 3,
+        "stage_b_epochs": 8,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4
+    },
+    "evaluation_config": {
+        "mahalanobis": true,
+        "linear_probe": true,
+        "mlp_classifier": true,
+        "knn": true
+    }
+}
