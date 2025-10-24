@@ -1,1 +1,0 @@
-# Projection heads used in contrastive learning setups.

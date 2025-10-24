@@ -63,7 +63,8 @@ def _fetch_embeddings_and_labels(model_name: str, version: str, mode: Optional[s
     sql = f"""
       SELECT e.segment_id,
              e.embedding::float4[] AS emb,
-             s.{label_col} AS label
+             s.{label_col} AS label,
+             s.video_id AS video_id
       FROM {table} e
       JOIN segments s USING (segment_id)
       WHERE {where_sql}
@@ -74,11 +75,12 @@ def _fetch_embeddings_and_labels(model_name: str, version: str, mode: Optional[s
         with conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
-    # rows: (segment_id, list_of_floats, label)
+    # rows: (segment_id, list_of_floats, label, video_id)
     seg_ids = [r[0] for r in rows]
     embs = [np.array(r[1], dtype=np.float32) for r in rows]
     labels = np.array([int(r[2]) for r in rows], dtype=np.int64)
-    return seg_ids, np.vstack(embs) if embs else np.zeros((0, 0), dtype=np.float32), labels, table
+    video_ids = [r[3] for r in rows]
+    return seg_ids, np.vstack(embs) if embs else np.zeros((0, 0), dtype=np.float32), labels, video_ids, table
 
 
 def retrieve_embeddings_and_labels(
@@ -116,7 +118,7 @@ def retrieve_embeddings_and_labels(
         print(f"  Denoiser filter: {denoiser_name}")
     
     # Fetch from Neon directly
-    seg_ids, all_embeddings, all_labels, table = _fetch_embeddings_and_labels(
+    seg_ids, all_embeddings, all_labels, video_ids, table = _fetch_embeddings_and_labels(
         model_name, version, mode, noise, denoiser_name
     )
     if all_embeddings.size == 0:
@@ -146,6 +148,7 @@ def retrieve_embeddings_and_labels(
                  embeddings=all_embeddings,
                  labels=all_labels,
                  segment_ids=np.array(seg_ids),
+                 video_ids=np.array(video_ids),
                  model_name=model_name,
                  version=version,
                  mode=mode,
