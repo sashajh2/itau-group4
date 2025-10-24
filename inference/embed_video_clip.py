@@ -1,1 +1,0 @@
-# Loads a saved model and returns the audio/video embeddings for a new clip.

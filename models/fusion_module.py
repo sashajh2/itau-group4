@@ -1,1 +1,0 @@
-# Implements cross-modal attention or other fusion methods.
