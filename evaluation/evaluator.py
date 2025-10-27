@@ -193,8 +193,15 @@ class EmbeddingEvaluator:
     
     def _evaluate_knn(self, train_emb, train_ids, test_emb, test_ids):
         """KNN evaluation for identity"""
-        knn1 = KNeighborsClassifier(n_neighbors=1)
-        knn5 = KNeighborsClassifier(n_neighbors=5)
+        n_unique_train = len(np.unique(train_ids))
+        n_unique_test = len(np.unique(test_ids))
+        
+        print(f"KNN Evaluation: {n_unique_train} unique identities in train, {n_unique_test} in test")
+        
+        # For very large number of identities, KNN is unlikely to work well
+        # Use cosine similarity instead of euclidean distance
+        knn1 = KNeighborsClassifier(n_neighbors=1, metric='cosine')
+        knn5 = KNeighborsClassifier(n_neighbors=5, metric='cosine')
         
         knn1.fit(train_emb, train_ids)
         knn5.fit(train_emb, train_ids)
@@ -203,6 +210,10 @@ class EmbeddingEvaluator:
         test_acc5 = knn5.score(test_emb, test_ids)
         
         print(f"KNN @1: {test_acc1:.4f}, KNN @5: {test_acc5:.4f}")
+        
+        # If accuracy is very low with large identity space, it's expected
+        if n_unique_train > 1000 and test_acc1 < 0.05:
+            print(f"WARNING: Low KNN accuracy ({test_acc1:.4f}) likely due to large identity space ({n_unique_train} identities)")
         
         return {
             'knn_test_acc_1': test_acc1,
