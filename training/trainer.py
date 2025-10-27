@@ -54,7 +54,7 @@ class ModelTrainer:
         if not isinstance(model, create_model('orthogonal', {}).__class__):
             raise ValueError("Stage A training only supports orthogonal models")
         
-        # Get real-only loader (only identity-labeled samples)
+        # Use standard training loader (works for both hom and het Stage A)
         train_loader = data_loaders['train']
         
         # Training hyperparameters
@@ -149,7 +149,7 @@ class ModelTrainer:
         if not isinstance(model, create_model('orthogonal', {}).__class__):
             raise ValueError("Stage B training only supports orthogonal models")
         
-        train_loader = data_loaders['train']
+        train_loader = data_loaders['train']  # Works for both hom and het Stage B
         val_loader = data_loaders.get('val', None)
         
         # Training hyperparameters

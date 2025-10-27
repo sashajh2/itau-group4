@@ -182,13 +182,11 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     
     Returns:
         Dictionary of DataLoaders with keys:
-        - 'train_stage_a_hom': For homogeneous head Stage A (real-only, ArcFace)
-        - 'train_stage_b_hom': For homogeneous head Stage B (direct classifier)
-        - 'train_stage_a_het': For heterogeneous head Stage A (direct identity classification)
-        - 'train_stage_b_het': For heterogeneous head Stage B (episodic prototypical)
-        - 'val_hom': Standard validation for homogeneous head
+        - 'train': Standard shuffled training DataLoader (used for most stages)
+        - 'train_het_stage_b': Episodic training for heterogeneous head Stage B (prototypical)
+        - 'val': Standard validation DataLoader
         - 'val_het_eval': Episodic evaluation for heterogeneous head
-        - 'test_hom': Standard test for homogeneous head
+        - 'test': Standard test DataLoader
         - 'test_het_eval': Episodic evaluation for heterogeneous head
     """
     
@@ -260,11 +258,8 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     
     # Default parameters
     batch_size = training_config.get('batch_size', 256)
-    hom_stage_a_batch_size = training_config.get('hom_stage_a_batch_size', batch_size)
-    hom_stage_b_batch_size = training_config.get('hom_stage_b_batch_size', batch_size)
-    het_stage_a_batch_size = training_config.get('het_stage_a_batch_size', batch_size)
     
-    # Episodic training parameters
+    # Episodic training parameters (for heterogeneous head Stage B only)
     het_n_way = training_config.get('het_n_way', 5)
     het_k_shot = training_config.get('het_k_shot', 5)
     het_n_query = training_config.get('het_n_query', 15)
@@ -280,44 +275,23 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     
     # ========== TRAINING LOADERS ==========
     
-    # Homogeneous Head - Stage A (real-only, ArcFace)
-    # Standard shuffled batching with diverse identities
-    train_stage_a_hom = DataLoader(
+    # Standard training DataLoader (used for all Stage A and Stage B except het Stage B)
+    train_loader = DataLoader(
         train_dataset,
-        batch_size=hom_stage_a_batch_size,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         collate_fn=collate_simple,
         pin_memory=pin_memory
     )
     
-    # Homogeneous Head - Stage B (direct classifier)
-    train_stage_b_hom = DataLoader(
-        train_dataset,
-        batch_size=hom_stage_b_batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        collate_fn=collate_simple,
-        pin_memory=pin_memory
-    )
-    
-    # Heterogeneous Head - Stage A (direct identity classification)
-    train_stage_a_het = DataLoader(
-        train_dataset,
-        batch_size=het_stage_a_batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        collate_fn=collate_simple,
-        pin_memory=pin_memory
-    )
-    
-    # Heterogeneous Head - Stage B (episodic prototypical)
-    train_sampler_stage_b_het = KWayNShotBatchSampler(
+    # Episodic training for heterogeneous head Stage B (prototypical)
+    train_sampler_het_stage_b = KWayNShotBatchSampler(
         train_dataset, het_n_way, het_k_shot, het_n_query, het_episodes_per_epoch
     )
-    train_stage_b_het = DataLoader(
+    train_het_stage_b = DataLoader(
         train_dataset,
-        batch_sampler=train_sampler_stage_b_het,
+        batch_sampler=train_sampler_het_stage_b,
         num_workers=num_workers,
         collate_fn=collate_simple,
         pin_memory=pin_memory
@@ -325,8 +299,8 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     
     # ========== VALIDATION LOADERS ==========
     
-    # Standard validation for homogeneous head
-    val_hom = DataLoader(
+    # Standard validation
+    val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
@@ -349,8 +323,8 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     
     # ========== TEST LOADERS ==========
     
-    # Standard test for homogeneous head
-    test_hom = DataLoader(
+    # Standard test
+    test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
@@ -372,13 +346,11 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     )
     
     return {
-        'train_stage_a_hom': train_stage_a_hom,
-        'train_stage_b_hom': train_stage_b_hom,
-        'train_stage_a_het': train_stage_a_het,
-        'train_stage_b_het': train_stage_b_het,
-        'val_hom': val_hom,
+        'train': train_loader,
+        'train_het_stage_b': train_het_stage_b,
+        'val': val_loader,
         'val_het_eval': val_het_eval,
-        'test_hom': test_hom,
+        'test': test_loader,
         'test_het_eval': test_het_eval,
     }
 
