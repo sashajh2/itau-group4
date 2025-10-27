@@ -13,9 +13,74 @@ import pandas as pd
 from collections import defaultdict
 from sklearn.model_selection import train_test_split
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Sampler
 
 from retriever.retriever import load_embedding_data
+
+
+class KWayNShotBatchSampler(Sampler):
+    """
+    Batch sampler for episodic training (K-way N-shot learning).
+    
+    Each batch/episode contains:
+    - N distinct identities (ways)
+    - K support samples per identity
+    - Q query samples per identity
+    
+    Total samples per episode: N * (K + Q)
+    """
+    
+    def __init__(self, dataset, n_way, k_shot, n_query, episodes_per_epoch):
+        """
+        Args:
+            dataset: EmbeddingDataset instance
+            n_way: Number of identities per episode
+            k_shot: Number of support samples per identity
+            n_query: Number of query samples per identity
+            episodes_per_epoch: Number of episodes per epoch
+        """
+        self.dataset = dataset
+        self.n_way = n_way
+        self.k_shot = k_shot
+        self.n_query = n_query
+        self.episodes_per_epoch = episodes_per_epoch
+        
+        # Filter out identities with too few samples
+        self.valid_ids = [
+            id_idx for id_idx in dataset.unique_ids
+            if len(dataset.id_to_indices[id_idx]) >= (k_shot + n_query)
+        ]
+        
+        if len(self.valid_ids) < n_way:
+            raise ValueError(
+                f"Not enough valid identities ({len(self.valid_ids)}) "
+                f"for {n_way}-way sampling. Need at least {n_way} identities "
+                f"with {k_shot + n_query} samples each."
+            )
+    
+    def __iter__(self):
+        """Generate episodes"""
+        for _ in range(self.episodes_per_epoch):
+            batch_indices = []
+            
+            # Sample N identities
+            sampled_ids = np.random.choice(self.valid_ids, self.n_way, replace=False)
+            
+            # For each identity, sample K support + Q query examples
+            for identity_idx in sampled_ids:
+                available_indices = self.dataset.id_to_indices[identity_idx]
+                
+                selected_indices = np.random.choice(
+                    available_indices,
+                    self.k_shot + self.n_query,
+                    replace=False
+                )
+                batch_indices.extend(selected_indices)
+            
+            yield batch_indices
+    
+    def __len__(self):
+        return self.episodes_per_epoch
 
 
 def collate_simple(batch):
@@ -26,7 +91,7 @@ def collate_simple(batch):
     is_real = torch.tensor([int(b["is_real"]) for b in batch], dtype=torch.int64)
     
     identity = [b["identity"] for b in batch]
-    video_id = [b["video_id"] for b in batch]
+    segment_id = [b["segment_id"] for b in batch]
     
     return {
         "e": e, 
@@ -34,7 +99,7 @@ def collate_simple(batch):
         "id_idx": id_idx, 
         "is_real": is_real,
         "identity": identity, 
-        "video_id": video_id
+        "segment_id": segment_id
     }
 
 
@@ -53,6 +118,17 @@ class EmbeddingDataset(Dataset):
         self.seg_ids = self.df['segment_id'].tolist()
         
         self.d = int(self.emb[0].shape[0]) if self.emb else None
+        
+        # Build id_to_indices mapping for episodic sampling
+        # This maps each identity index to all sample indices that belong to that identity
+        # Used by KWayNShotBatchSampler to efficiently sample episodes
+        self.id_to_indices = defaultdict(list)
+        for i, id_idx in enumerate(self.idi):
+            self.id_to_indices[id_idx].append(i)
+        self.unique_ids = list(self.id_to_indices.keys())
+        
+        print(f"Dataset: {len(self)} samples, {len(self.unique_ids)} unique identities")
+        print(f"Identity distribution: {[len(indices) for indices in list(self.id_to_indices.values())[:5]]}...")
     
     def __len__(self):
         return len(self.y)
@@ -87,22 +163,33 @@ def balanced_copy(x: pd.DataFrame) -> pd.DataFrame:
 
 def load_data(model_name: str = "openl3", version: str = "2025-09-12", 
               noise: str = "none", denoiser_name: str = "none",
-              batch_size: int = 256, num_workers: int = 4,
+              training_config: Dict[str, Any] = None,
+              evaluation_config: Dict[str, Any] = None,
+              num_workers: int = 4,
               val_test_balanced: bool = True) -> Dict[str, DataLoader]:
     """
-    Load embeddings from Neon and create PyTorch DataLoaders.
+    Load embeddings from Neon and create PyTorch DataLoaders for training and evaluation.
     
     Args:
         model_name: Model name ('hubert', 'openl3', 'senet')
         version: Version string
         noise: Noise level filter
         denoiser_name: Denoiser filter
-        batch_size: Batch size for DataLoaders
+        training_config: Training configuration dict with batching parameters
+        evaluation_config: Evaluation configuration dict with parameters
         num_workers: Number of worker processes
         val_test_balanced: Whether to balance validation and test sets
     
     Returns:
-        Dictionary of DataLoaders: {'train': train_loader, 'val': val_loader, 'test': test_loader}
+        Dictionary of DataLoaders with keys:
+        - 'train_stage_a_hom': For homogeneous head Stage A (real-only, ArcFace)
+        - 'train_stage_b_hom': For homogeneous head Stage B (direct classifier)
+        - 'train_stage_a_het': For heterogeneous head Stage A (direct identity classification)
+        - 'train_stage_b_het': For heterogeneous head Stage B (episodic prototypical)
+        - 'val_hom': Standard validation for homogeneous head
+        - 'val_het_eval': Episodic evaluation for heterogeneous head
+        - 'test_hom': Standard test for homogeneous head
+        - 'test_het_eval': Episodic evaluation for heterogeneous head
     """
     
     print("Loading embeddings from Neon...")
@@ -165,37 +252,133 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     val_dataset = EmbeddingDataset(val_df)
     test_dataset = EmbeddingDataset(test_df)
     
-    # Create dataloaders
-    train_loader = DataLoader(
+    # Get config parameters
+    if training_config is None:
+        training_config = {}
+    if evaluation_config is None:
+        evaluation_config = {}
+    
+    # Default parameters
+    batch_size = training_config.get('batch_size', 256)
+    hom_stage_a_batch_size = training_config.get('hom_stage_a_batch_size', batch_size)
+    hom_stage_b_batch_size = training_config.get('hom_stage_b_batch_size', batch_size)
+    het_stage_a_batch_size = training_config.get('het_stage_a_batch_size', batch_size)
+    
+    # Episodic training parameters
+    het_n_way = training_config.get('het_n_way', 5)
+    het_k_shot = training_config.get('het_k_shot', 5)
+    het_n_query = training_config.get('het_n_query', 15)
+    het_episodes_per_epoch = training_config.get('het_episodes_per_epoch', 100)
+    
+    # Evaluation episodic parameters
+    eval_n_way = evaluation_config.get('eval_n_way', 5)
+    eval_k_shot = evaluation_config.get('eval_k_shot', 5)
+    eval_n_query = evaluation_config.get('eval_n_query', 15)
+    eval_episodes = evaluation_config.get('eval_episodes', 50)
+    
+    pin_memory = torch.cuda.is_available()
+    
+    # ========== TRAINING LOADERS ==========
+    
+    # Homogeneous Head - Stage A (real-only, ArcFace)
+    # Standard shuffled batching with diverse identities
+    train_stage_a_hom = DataLoader(
         train_dataset,
-        batch_size=batch_size,
+        batch_size=hom_stage_a_batch_size,
         shuffle=True,
         num_workers=num_workers,
         collate_fn=collate_simple,
-        pin_memory=True if torch.cuda.is_available() else False
+        pin_memory=pin_memory
     )
     
-    val_loader = DataLoader(
+    # Homogeneous Head - Stage B (direct classifier)
+    train_stage_b_hom = DataLoader(
+        train_dataset,
+        batch_size=hom_stage_b_batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        collate_fn=collate_simple,
+        pin_memory=pin_memory
+    )
+    
+    # Heterogeneous Head - Stage A (direct identity classification)
+    train_stage_a_het = DataLoader(
+        train_dataset,
+        batch_size=het_stage_a_batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        collate_fn=collate_simple,
+        pin_memory=pin_memory
+    )
+    
+    # Heterogeneous Head - Stage B (episodic prototypical)
+    train_sampler_stage_b_het = KWayNShotBatchSampler(
+        train_dataset, het_n_way, het_k_shot, het_n_query, het_episodes_per_epoch
+    )
+    train_stage_b_het = DataLoader(
+        train_dataset,
+        batch_sampler=train_sampler_stage_b_het,
+        num_workers=num_workers,
+        collate_fn=collate_simple,
+        pin_memory=pin_memory
+    )
+    
+    # ========== VALIDATION LOADERS ==========
+    
+    # Standard validation for homogeneous head
+    val_hom = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=collate_simple,
-        pin_memory=True if torch.cuda.is_available() else False
+        pin_memory=pin_memory
     )
     
-    test_loader = DataLoader(
+    # Episodic evaluation for heterogeneous head
+    val_sampler_het_eval = KWayNShotBatchSampler(
+        val_dataset, eval_n_way, eval_k_shot, eval_n_query, eval_episodes
+    )
+    val_het_eval = DataLoader(
+        val_dataset,
+        batch_sampler=val_sampler_het_eval,
+        num_workers=num_workers,
+        collate_fn=collate_simple,
+        pin_memory=pin_memory
+    )
+    
+    # ========== TEST LOADERS ==========
+    
+    # Standard test for homogeneous head
+    test_hom = DataLoader(
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=collate_simple,
-        pin_memory=True if torch.cuda.is_available() else False
+        pin_memory=pin_memory
+    )
+    
+    # Episodic evaluation for heterogeneous head
+    test_sampler_het_eval = KWayNShotBatchSampler(
+        test_dataset, eval_n_way, eval_k_shot, eval_n_query, eval_episodes
+    )
+    test_het_eval = DataLoader(
+        test_dataset,
+        batch_sampler=test_sampler_het_eval,
+        num_workers=num_workers,
+        collate_fn=collate_simple,
+        pin_memory=pin_memory
     )
     
     return {
-        'train': train_loader,
-        'val': val_loader,
-        'test': test_loader
+        'train_stage_a_hom': train_stage_a_hom,
+        'train_stage_b_hom': train_stage_b_hom,
+        'train_stage_a_het': train_stage_a_het,
+        'train_stage_b_het': train_stage_b_het,
+        'val_hom': val_hom,
+        'val_het_eval': val_het_eval,
+        'test_hom': test_hom,
+        'test_het_eval': test_het_eval,
     }
 

@@ -67,7 +67,8 @@ def run_single_experiment(config_path: str, output_dir: str, device: str = 'cuda
         version=version,
         noise=noise,
         denoiser_name=denoiser_name,
-        batch_size=batch_size,
+        training_config=config.get('training_config', {}),
+        evaluation_config=config.get('evaluation_config', {}),
         num_workers=num_workers
     )
     
