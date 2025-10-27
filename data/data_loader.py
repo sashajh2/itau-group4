@@ -165,8 +165,7 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
               noise: str = "none", denoiser_name: str = "none",
               training_config: Dict[str, Any] = None,
               evaluation_config: Dict[str, Any] = None,
-              num_workers: int = 4,
-              val_test_balanced: bool = True) -> Dict[str, DataLoader]:
+              num_workers: int = 4) -> Dict[str, DataLoader]:
     """
     Load embeddings from Neon and create PyTorch DataLoaders for training and evaluation.
     
@@ -218,32 +217,54 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
     id2idx = {s: i for i, s in enumerate(sorted(df['identity'].unique()))}
     df['id_idx'] = df['identity'].map(id2idx).astype(np.int64)
     
-    # Split data (70/15/15)
-    n = len(df)
-    n_train = int(0.70 * n)
-    n_val = int(0.15 * n)
+    # Split data by identity first (ensure each set has enough samples per identity)
+    # Filter identities that have at least min_samples_per_id samples
+    min_samples_per_id = 20  # Minimum for episodic evaluation
+    identity_counts = df.groupby('identity').size()
+    valid_identities = identity_counts[identity_counts >= min_samples_per_id].index
     
-    train_df, hold_df = train_test_split(
-        df, test_size=(n - n_train), random_state=123, stratify=df['label']
-    )
-    val_df, test_df = train_test_split(
-        hold_df, test_size=(len(hold_df) - n_val), random_state=123, stratify=hold_df['label']
-    )
+    # Filter dataframe to only include identities with enough samples
+    df_filtered = df[df['identity'].isin(valid_identities)].copy()
     
+    print(f"\nAfter filtering for identities with >= {min_samples_per_id} samples:")
+    print(f"  Total samples: {len(df_filtered)} (from {len(df)} original)")
+    print(f"  Unique identities: {df_filtered['identity'].nunique()} (from {df['identity'].nunique()} original)")
+    print(f"  Label counts: {df_filtered['label'].value_counts().to_dict()}")
+    
+    # Split identities (not samples) to ensure each split has enough identities
+    unique_ids_list = df_filtered['identity'].unique()
+    n_ids = len(unique_ids_list)
+    n_train_ids = int(0.70 * n_ids)
+    n_val_ids = int(0.15 * n_ids)
+    
+    # Shuffle and split identities
+    import random
+    random.seed(123)
+    random.shuffle(unique_ids_list)
+    
+    train_ids = set(unique_ids_list[:n_train_ids])
+    val_ids = set(unique_ids_list[n_train_ids:n_train_ids + n_val_ids])
+    test_ids = set(unique_ids_list[n_train_ids + n_val_ids:])
+    
+    # Split dataframe by identities
+    train_df = df_filtered[df_filtered['identity'].isin(train_ids)].copy()
+    val_df = df_filtered[df_filtered['identity'].isin(val_ids)].copy()
+    test_df = df_filtered[df_filtered['identity'].isin(test_ids)].copy()
+    
+    # Check that each set has enough samples per identity
     print("\n=== Data Splits ===")
     for name, x in [("train", train_df), ("val", val_df), ("test", test_df)]:
         print(f"{name:>5}: {len(x):7,} rows | ids={x['identity'].nunique():5,}")
         print("       label counts:", x['label'].value_counts().to_dict())
-    
-    # Optionally balance val/test
-    if val_test_balanced:
-        val_df = balanced_copy(val_df)
-        test_df = balanced_copy(test_df)
         
-        print("\n=== After Balancing val/test ===")
-        for name, x in [("val", val_df), ("test", test_df)]:
-            print(f"{name:>8}: {len(x):7,} rows | ids={x['identity'].nunique():5,}")
-            print("          label counts:", x['label'].value_counts().to_dict())
+        # Check minimum samples per identity in this split
+        min_samples = x.groupby('identity').size().min()
+        print(f"       min samples per identity: {min_samples}")
+        
+        # Count identities with at least 20 samples
+        id_counts = x.groupby('identity').size()
+        ids_with_20_plus = (id_counts >= 20).sum()
+        print(f"       identities with >= 20 samples: {ids_with_20_plus}/{len(id_counts)}")
     
     # Create datasets
     train_dataset = EmbeddingDataset(train_df)

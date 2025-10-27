@@ -93,13 +93,8 @@ class EmbeddingEvaluator:
             )
             results.update(knn_results)
         
-        # Few-shot episodic evaluation
-        if evaluation_config.get('few_shot', True):
-            print("Evaluating Few-Shot Episodic...")
-            few_shot_results = self._evaluate_few_shot_episodic(
-                train_loader, test_loader, model
-            )
-            results.update(few_shot_results)
+        # Note: Few-shot episodic evaluation is handled separately in trainer
+        # to use the special episodic test loader
         
         return results
     
@@ -237,32 +232,43 @@ class EmbeddingEvaluator:
             # Move to numpy
             emb_np = emb.cpu().numpy()
             
-            # Assume batch structure is 5-way 5-shot + 15 queries per class
-            # Total: 5 * (5 + 15) = 100 samples
+            # Episodic data structure: 5 classes × 20 samples per class = 100 total
+            # Need to parse which samples belong to which class based on id_idx
             if len(emb_np) == 100:
-                # Reshape: [5 classes, 20 samples per class]
-                embeddings_reshaped = emb_np.reshape(5, 20, -1)
-                ids_reshaped = id_idx.reshape(5, 20)
+                unique_classes = np.unique(id_idx)
+                n_way = len(unique_classes)
                 
-                # For each class, compute prototype (mean of first 5 support samples)
-                prototypes = []
-                for i in range(5):
-                    support_samples = embeddings_reshaped[i][:5]  # First 5 are support
-                    prototype = support_samples.mean(axis=0)
-                    prototypes.append(prototype)
-                
-                # Classify each query (last 15 samples per class)
-                for i in range(5):
-                    query_samples = embeddings_reshaped[i][5:]  # Last 15 are queries
-                    for query in query_samples:
-                        # Compute cosine similarity to all prototypes
-                        similarities = [np.dot(query, proto) / (np.linalg.norm(query) * np.linalg.norm(proto)) 
-                                       for proto in prototypes]
-                        predicted_class = np.argmax(similarities)
-                        
-                        if predicted_class == i:
-                            correct += 1
-                        total += 1
+                if n_way == 5:  # Expected 5-way
+                    # Group by class
+                    class_samples = {}
+                    for idx, class_id in enumerate(id_idx):
+                        if class_id not in class_samples:
+                            class_samples[class_id] = []
+                        class_samples[class_id].append(emb_np[idx])
+                    
+                    # Compute prototypes (mean of all samples for each class)
+                    prototypes = []
+                    class_ids_list = []
+                    for class_id, samples in class_samples.items():
+                        prototype = np.array(samples).mean(axis=0)
+                        prototypes.append(prototype)
+                        class_ids_list.append(class_id)
+                    
+                    # For each class, classify its samples
+                    for class_id, samples in class_samples.items():
+                        for sample in samples:
+                            # Compute cosine similarity to all prototypes
+                            similarities = []
+                            for proto in prototypes:
+                                sim = np.dot(sample, proto) / (np.linalg.norm(sample) * np.linalg.norm(proto))
+                                similarities.append(sim)
+                            
+                            predicted_class_idx = np.argmax(similarities)
+                            predicted_class = class_ids_list[predicted_class_idx]
+                            
+                            if predicted_class == class_id:
+                                correct += 1
+                            total += 1
         
         accuracy = correct / total if total > 0 else 0.0
         print(f"Few-Shot (5-way 5-shot + 15 queries) Accuracy: {accuracy:.4f}")
