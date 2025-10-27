@@ -54,8 +54,9 @@ class BaseEmbeddingModel(ABC):
         """Return embeddings for evaluation"""
         pass
 
-class OrthogonalModel(BaseEmbeddingModel):
+class OrthogonalModel(nn.Module, BaseEmbeddingModel):
     def __init__(self, config: Dict[str, Any]):
+        super().__init__()
         self.config = config
         self.adapter = self._build_adapter()
         self.f_hom = self._build_homogeneous_head()
@@ -114,10 +115,11 @@ class OrthogonalModel(BaseEmbeddingModel):
         z_id = F.normalize(self.f_id(z), dim=1)
         return z_hom, z_id
 
-class DirectClassifierModel(BaseEmbeddingModel):
+class DirectClassifierModel(nn.Module, BaseEmbeddingModel):
     """Simple classifier directly on raw embeddings"""
     
     def __init__(self, config: Dict[str, Any]):
+        super().__init__()
         self.config = config
         self.classifier = self._build_classifier()
     
@@ -139,11 +141,11 @@ class DirectClassifierModel(BaseEmbeddingModel):
     def get_embeddings(self, x):
         return x  # Return raw embeddings
 
-# Model factory function
-class BaseEmbeddingsModel(BaseEmbeddingModel):
+class BaseEmbeddingsModel(nn.Module, BaseEmbeddingModel):
     """Simple model that just returns raw embeddings"""
     
     def __init__(self, config: Dict[str, Any]):
+        super().__init__()
         self.config = config
     
     def forward(self, x):
