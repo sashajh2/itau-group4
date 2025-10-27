@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 import torch.nn as nn
+import torch.nn.functional as F
 
 class BaseEmbeddingModel(ABC):
     """Base class for all embedding models"""
@@ -40,9 +41,14 @@ class OrthogonalModel(BaseEmbeddingModel):
     
     def _build_identity_head(self):
         return nn.Sequential(
-            nn.Linear(self.config['adapter_hidden_dim'], self.config['head_dim']),
-            nn.ReLU(),
-            nn.Linear(self.config['head_dim'], self.config['head_dim'])
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 128),
+            nn.functional.normalize  # L2 normalize the final embedding
         )
     
     def _build_classifier(self):
