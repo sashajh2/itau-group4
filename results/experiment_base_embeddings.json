@@ -1,0 +1,41 @@
+{
+  "config": {
+    "name": "base_embeddings",
+    "data_config": {
+      "model_name": "openl3",
+      "version": "2025-09-12",
+      "noise": "none",
+      "denoiser_name": "none"
+    },
+    "model_config": {
+      "type": "base_embeddings"
+    },
+    "training_config": {
+      "stage_a": false,
+      "stage_b": false,
+      "batch_size": 256
+    },
+    "evaluation_config": {
+      "mahalanobis": true,
+      "linear_probe": true,
+      "mlp_classifier": true,
+      "knn": true,
+      "few_shot": true,
+      "eval_n_way": 5,
+      "eval_k_shot": 5,
+      "eval_n_query": 15,
+      "eval_episodes": 50
+    }
+  },
+  "results": {
+    "mahalanobis_val_auc": 0.7289549308014818,
+    "mahalanobis_test_auc": 0.7073753271210516,
+    "linear_probe_val_auc": 0.9914396616334874,
+    "linear_probe_test_auc": 0.9909645594545592,
+    "mlp_val_auc": 0.7874088054227297,
+    "mlp_test_auc": 0.8013231456908415,
+    "knn_test_acc_1": 0.0,
+    "knn_test_acc_5": 0.0,
+    "few_shot_acc": 0.717
+  }
+}
