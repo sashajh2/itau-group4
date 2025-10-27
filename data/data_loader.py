@@ -18,16 +18,6 @@ from torch.utils.data import Dataset, DataLoader
 from retriever.retriever import load_embedding_data
 
 
-def extract_identity(segment_id: str) -> str:
-    """Extract identity from segment_id (video_id or first two components)"""
-    if '/' in segment_id:
-        # Take first two components: video_id/path
-        return '/'.join(segment_id.split('/')[:2])
-    else:
-        # Take everything except last underscore component
-        return '_'.join(segment_id.split('_')[:-1])
-
-
 def collate_simple(batch):
     """Collate function for DataLoader"""
     e = torch.stack([b["e"] for b in batch], dim=0)
@@ -36,7 +26,7 @@ def collate_simple(batch):
     is_real = torch.tensor([int(b["is_real"]) for b in batch], dtype=torch.int64)
     
     identity = [b["identity"] for b in batch]
-    segment_id = [b["segment_id"] for b in batch]
+    video_id = [b["video_id"] for b in batch]
     
     return {
         "e": e, 
@@ -44,7 +34,7 @@ def collate_simple(batch):
         "id_idx": id_idx, 
         "is_real": is_real,
         "identity": identity, 
-        "segment_id": segment_id
+        "video_id": video_id
     }
 
 
@@ -60,7 +50,7 @@ class EmbeddingDataset(Dataset):
         self.idi = self.df['id_idx'].astype(np.int64).to_numpy()
         self.real = (self.df['label'] == 1).astype(np.int64).to_numpy()
         self.ident = self.df['identity'].tolist()
-        self.segid = self.df['segment_id'].tolist()
+        self.seg_ids = self.df['segment_id'].tolist()
         
         self.d = int(self.emb[0].shape[0]) if self.emb else None
     
@@ -74,7 +64,7 @@ class EmbeddingDataset(Dataset):
             "id_idx": torch.tensor(self.idi[i]),
             "is_real": torch.tensor(self.real[i]),
             "identity": self.ident[i],
-            "segment_id": self.segid[i],
+            "segment_id": self.seg_ids[i],
         }
 
 
@@ -123,28 +113,21 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
         denoiser_name=denoiser_name if denoiser_name != "none" else None,
     )
     
-    print(f"Loaded {len(segment_ids)} embeddings with dimension {embeddings.shape[1]}")
+    print(f"Loaded {len(video_ids)} embeddings with dimension {embeddings.shape[1]}")
     
-    # Flip labels: 1=fake, 0=real -> 0=fake, 1=real (or keep as is depending on your convention)
-    # Assuming labels are already 1=real, 0=fake from Neon
-    # labels = 1 - labels  # Uncomment if you need to flip
-    
-    # Extract identities
-    identities = [extract_identity(sid) for sid in segment_ids]
-    
+    # video_id is already the identity
     # Create DataFrame
     df = pd.DataFrame({
         'embedding': [row for row in embeddings],
         'label': labels,
-        'identity': identities,
-        'video_id': video_ids,
+        'identity': video_ids,  # video_id IS the identity
         'segment_id': segment_ids
     })
     
     print(f"Total rows: {len(df)}")
     print(f"Label counts (1=real, 0=fake):")
     print(df['label'].value_counts(dropna=False).to_string())
-    print(f"Unique identities: {df['identity'].nunique()}")
+    print(f"Unique identities (video_ids): {df['identity'].nunique()}")
     
     # Map identity -> int
     id2idx = {s: i for i, s in enumerate(sorted(df['identity'].unique()))}
