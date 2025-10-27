@@ -4,7 +4,7 @@ Convenience script to run experiments from command line.
 Example:
 
 # Run orthogonal model experiment
-python experiments/main.py --mode single --config experiments/configs/orthogonal_model.json
+python experiments/main.py --mode single --config models/configs/orthogonal_model.json
 
 # Or use convenience script
 python experiments/run_experiment.py orthogonal_model
@@ -26,7 +26,7 @@ from pathlib import Path
 
 def run_experiment(config_name: str, mode: str = 'single'):
     """Run an experiment with a predefined config"""
-    config_path = Path('experiments/configs') / f"{config_name}.json"
+    config_path = Path('models/configs') / f"{config_name}.json"
     
     if not config_path.exists():
         print(f"Config file not found: {config_path}")

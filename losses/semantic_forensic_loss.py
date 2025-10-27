@@ -1,1 +1,0 @@
-# Combines semantic and forensic contrastive objectives during joint training.
