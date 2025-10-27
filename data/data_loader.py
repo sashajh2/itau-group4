@@ -177,7 +177,6 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
         training_config: Training configuration dict with batching parameters
         evaluation_config: Evaluation configuration dict with parameters
         num_workers: Number of worker processes
-        val_test_balanced: Whether to balance validation and test sets
     
     Returns:
         Dictionary of DataLoaders with keys:
