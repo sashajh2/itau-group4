@@ -200,7 +200,7 @@ def load_data(model_name: str = "openl3", version: str = "2025-09-12",
         denoiser_name=denoiser_name if denoiser_name != "none" else None,
     )
     
-    print(f"Loaded {len(video_ids)} embeddings with dimension {embeddings.shape[1]}")
+    print(f"Loaded {len(segment_ids)} embeddings with dimension {embeddings.shape[1]}")
     
     # video_id is already the identity
     # Create DataFrame
