@@ -1,7 +1,7 @@
 # training/trainer.py
 from evaluation.evaluator import EmbeddingEvaluator
 from models.model_factory import create_model
-from losses.semantic_forensic_loss import (
+from losses.loss import (
     variance_compactness, 
     cross_cov_penalty, 
     build_pos_neg_from_batch,

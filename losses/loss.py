@@ -152,3 +152,89 @@ class SupConLoss(nn.Module):
         mean_log_pos = (labels * log_prob).sum(1) / (labels.sum(1) + 1e-12)
         
         return -mean_log_pos.mean()
+
+
+class ArcMarginProduct(nn.Module):
+    """
+    ArcFace: Angular Margin Loss for deep face recognition
+    Implements additive angular margin for better discrimination between classes
+    
+    Formula: L = -log(softmax(s * cos(θ_y + m)))
+    
+    Where:
+    - s: scaling factor (e.g., 30)
+    - m: angular margin (e.g., 0.5 radians)
+    - θ_y: angle between sample embedding and its class center
+    """
+    
+    def __init__(self, in_features, out_features, s=30.0, m=0.5, easy_margin=False):
+        super(ArcMarginProduct, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.s = s
+        self.m = m
+        self.easy_margin = easy_margin
+        
+        # Learnable weight matrix for class centers
+        self.weight = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        nn.init.xavier_uniform_(self.weight)
+    
+    def forward(self, input, label):
+        """
+        Args:
+            input: [B, D] normalized embeddings (should be L2 normalized)
+            label: [B] integer class labels (0 to num_classes-1)
+        
+        Returns:
+            logits: [B, num_classes] logits with angular margin
+        """
+        # Normalize embeddings and weights
+        cosine = F.linear(F.normalize(input), F.normalize(self.weight))
+        
+        # Convert to angles (θ)
+        theta = torch.acos(torch.clamp(cosine, -1.0 + 1e-7, 1.0 - 1e-7))
+        
+        # Add angular margin for the correct class
+        target_theta = theta[torch.arange(len(label)), label].view(-1, 1)
+        target_theta_margin = torch.cos(target_theta + self.m)
+        
+        # Apply margin to the correct class
+        if self.easy_margin:
+            target_theta_margin = torch.where(
+                target_theta > torch.tensor(self.m).to(target_theta.device),
+                target_theta_margin, torch.cos(target_theta)
+            )
+        
+        # Replace cosine of correct class with margin version
+        output = cosine * 1.0
+        output[torch.arange(len(label)), label] = target_theta_margin.squeeze()
+        
+        # Scale by s
+        output *= self.s
+        
+        return output
+
+
+class ArcFaceLoss(nn.Module):
+    """
+    Combined ArcMarginProduct and CrossEntropyLoss
+    Convenience wrapper for ArcFace training
+    """
+    
+    def __init__(self, in_features, out_features, s=30.0, m=0.5):
+        super(ArcFaceLoss, self).__init__()
+        self.arc_margin = ArcMarginProduct(in_features, out_features, s, m)
+        self.criterion = nn.CrossEntropyLoss()
+    
+    def forward(self, input, label):
+        """
+        Args:
+            input: [B, D] normalized embeddings
+            label: [B] integer class labels
+        
+        Returns:
+            loss: scalar loss value
+        """
+        logits = self.arc_margin(input, label)
+        loss = self.criterion(logits, label)
+        return loss
