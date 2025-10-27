@@ -1,7 +1,14 @@
 {
     "name": "orthogonal_model",
+    "data_config": {
+        "model_name": "openl3",
+        "version": "2025-09-12",
+        "noise": "none",
+        "denoiser_name": "none"
+    },
     "model_config": {
         "type": "orthogonal",
+        "input_dim": 512,
         "use_adapter": true,
         "adapter_hidden_dim": 256,
         "adapter_layers": 2,

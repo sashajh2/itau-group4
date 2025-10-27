@@ -1,174 +1,121 @@
-# Accepts a query (text, vector, etc.), 
-# performs vector search in FAISS, 
-# retrieves metadata from SQLite, 
-# and returns relevant segments. 
-# 
-# Can be turned into an API or used in a notebook.
+#!/usr/bin/env python3
+"""
+Retrieve embeddings and labels from Neon Postgres (pgvector).
 
+This module provides functions to:
+1. Query Neon directly for a given model/version
+2. Join to segments to fetch labels
+3. Return embeddings, labels, and video_ids as numpy arrays
+
+Usage:
+    from retriever.retriever import load_embedding_data
+    
+    embeddings, labels, video_ids, seg_ids = load_embedding_data(
+        model_name="openl3",
+        version="2025-09-12"
+    )
+"""
+
+from typing import Optional, Tuple
 import numpy as np
-import pickle
-import json
-import sqlite3
-import faiss
-from pathlib import Path
-from typing import Tuple, Dict, List
-from dropbox_utils.dropbox_utils import download_file
+import psycopg2
+
 from utils.config_loader import load_config
 
-def retrieve_hubert_embeddings_and_labels(
-    created_at: str = "2025-08-21T13:51:04.162022+00:00",
-    output_dir: str = "./embeddings/audio/hubert",
-    dropbox_embedding_path: str = "/embedding_store/AVDeepfake1M/raw/audio/hubert.index",
-    dropbox_mapping_path: str = "/embedding_store/AVDeepfake1M/raw/audio/hubert_mapping.json",
-    local_temp_dir: str = "./temp_embeddings"
-) -> Tuple[np.ndarray, List[int]]:
+
+_SPACE_TO_TABLE = {
+    ("audio", "hubert"): ("embeddings_audio_hubert", "audio_label"),
+    ("audio", "openl3"): ("embeddings_audio_openl3", "audio_label"),
+    ("video", "senet"): ("embeddings_video_senet", "video_label"),
+}
+
+
+def _connect_neon():
+    cfg = load_config()
+    dsn = cfg["database"]["postgres"]["neon_database_url"]
+    return psycopg2.connect(dsn)
+
+
+def load_embedding_data(
+    model_name: str,
+    version: str,
+    mode: Optional[str] = None,
+    noise: Optional[str] = None,
+    denoiser_name: Optional[str] = None,
+) -> Tuple[np.ndarray, np.ndarray, list, list]:
     """
-    Retrieve Hubert embeddings from FAISS index and corresponding labels from database.
+    Load embeddings, labels, video_ids, and segment_ids from Neon Postgres.
     
     Args:
-        created_at: Timestamp of the embedding index to retrieve
-        output_dir: Directory to save the output .npy and .pkl files
-        dropbox_embedding_path: Path to the Hubert FAISS index in Dropbox
-        dropbox_mapping_path: Path to the Hubert mapping JSON in Dropbox
-        local_temp_dir: Local directory for temporary files
-        
+        model_name: Name of the model (e.g., 'hubert', 'openl3', 'senet')
+        version: Version string (e.g., '2025-09-12')
+        mode: Optional mode filter ('audio' or 'video')
+        noise: Optional noise filter ('none', 'denoised', 'noisy')
+        denoiser_name: Optional denoiser filter ('demucs', 'voicefixer', etc.)
+    
     Returns:
-        Tuple of (embeddings_array, labels_list)
+        Tuple of (embeddings, labels, video_ids, segment_ids)
+        - embeddings: [N, D] numpy array
+        - labels: [N] numpy array
+        - video_ids: [N] list of video IDs
+        - segment_ids: [N] list of segment IDs
     """
+    # Determine table and label column
+    if mode is None:
+        # Infer mode from model
+        if model_name in ("hubert", "openl3"):
+            mode = "audio"
+        elif model_name == "senet":
+            mode = "video"
+        else:
+            raise ValueError("Provide --mode for unknown model")
     
-    # Create output and temp directories
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    Path(local_temp_dir).mkdir(parents=True, exist_ok=True)
+    key = (mode.lower(), model_name.lower())
+    if key not in _SPACE_TO_TABLE:
+        raise ValueError(f"Unsupported model/mode: {key}")
     
-    print(f"🔍 Retrieving Hubert embeddings for {created_at}")
-    
-    # Download files from Dropbox
-    print("📥 Downloading files from Dropbox...")
-    
-    local_index_path = f"{local_temp_dir}/hubert.index"
-    local_mapping_path = f"{local_temp_dir}/hubert_mapping.json"
-    
-    # Download FAISS index
-    if not download_file(dropbox_embedding_path, local_index_path):
-        raise RuntimeError("Failed to download Hubert FAISS index from Dropbox")
-    
-    # Download mapping JSON
-    if not download_file(dropbox_mapping_path, local_mapping_path):
-        raise RuntimeError("Failed to download Hubert mapping JSON from Dropbox")
-    
-    print("✅ Files downloaded successfully")
-    
-    # Load the mapping JSON
-    print("📋 Loading segment-to-index mapping...")
-    with open(local_mapping_path, 'r') as f:
-        mapping_data = json.load(f)
-    
-    segment_to_index = mapping_data.get('segment_to_index', {})
-    total_embeddings = mapping_data.get('total_embeddings', 0)
-    embedding_dim = mapping_data.get('embedding_dim', 768)
-    
-    print(f"📊 Found {total_embeddings} embeddings with dimension {embedding_dim}")
-    print(f"📝 Found {len(segment_to_index)} segment mappings")
-    
-    # Load the FAISS index
-    print("🔍 Loading FAISS index...")
-    index = faiss.read_index(local_index_path)
-    print(f"📊 FAISS index loaded: {index.ntotal} vectors")
-    
-    # Retrieve all embeddings
-    print("🔄 Retrieving all embeddings from FAISS...")
-    embeddings = index.reconstruct_n(0, total_embeddings)
-    print(f"✅ Retrieved embeddings shape: {embeddings.shape}")
-    
-    # Connect to SQLite database
-    print("🗄️ Connecting to SQLite database...")
-    config = load_config()
-    db_path = config.get('database', {}).get('path', './db/embeddings.sqlite3')
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Get segments table schema to understand the structure
-    cursor.execute("PRAGMA table_info(segments)")
-    columns = cursor.fetchall()
-    print(f"📋 Segments table columns: {[col[1] for col in columns]}")
-    
-    # Query database for each segment to get audio labels
-    print("🏷️ Retrieving audio labels from database...")
-    labels = []
-    segment_ids = []
-    
-    for segment_id, index_num in segment_to_index.items():
-        try:
-            # Query the segments table for this segment_id
-            cursor.execute(
-                "SELECT audio_label FROM segments WHERE segment_id = ?",
-                (segment_id,)
-            )
-            result = cursor.fetchone()
-            
-            if result:
-                audio_label = result[0]
-                labels.append(audio_label)
-                segment_ids.append(segment_id)
-            else:
-                print(f"⚠️ No database entry found for segment: {segment_id}")
-                # Use a default label (you might want to adjust this)
-                labels.append(-1)  # Default label for missing entries
-                segment_ids.append(segment_id)
-                
-        except Exception as e:
-            print(f"❌ Error querying segment {segment_id}: {e}")
-            labels.append(-1)  # Default label for errors
-            segment_ids.append(segment_id)
-    
-    conn.close()
-    
-    print(f"🏷️ Retrieved {len(labels)} labels")
-    print(f"📊 Label distribution: {np.bincount(np.array(labels))}")
-    
-    # Save embeddings as .npy
-    embeddings_output_path = f"{output_dir}/hubert_embeddings_{created_at.replace(':', '-').replace('+', '_')}.npy"
-    print(f"💾 Saving embeddings to {embeddings_output_path}")
-    np.save(embeddings_output_path, embeddings)
-    
-    # Save labels as .pkl (just the raw labels array like the original format)
-    labels_output_path = f"{output_dir}/hubert_labels_{created_at.replace(':', '-').replace('+', '_')}.pkl"
-    print(f"💾 Saving labels to {labels_output_path}")
-    
-    # Convert to numpy array and save just the labels (like the original format)
-    labels_array = np.array(labels)
-    print(f"📊 Labels array shape: {labels_array.shape}, dtype: {labels_array.dtype}")
-    
-    # Save just the labels array, not a dictionary
-    with open(labels_output_path, 'wb') as f:
-        pickle.dump(labels_array, f)
-    
-    # Clean up temporary files
-    print("🧹 Cleaning up temporary files...")
-    Path(local_index_path).unlink(missing_ok=True)
-    Path(local_mapping_path).unlink(missing_ok=True)
-    
-    print(f"🎉 Successfully saved {total_embeddings} Hubert embeddings and labels!")
-    print(f"📁 Embeddings: {embeddings_output_path}")
-    print(f"📁 Labels: {labels_output_path}")
-    
-    return embeddings, labels
+    table, label_col = _SPACE_TO_TABLE[key]
 
-def main():
-    """Example usage of the retrieval function"""
-    try:
-        embeddings, labels = retrieve_hubert_embeddings_and_labels()
-        
-        print(f"\n📊 Final Summary:")
-        print(f"   Embeddings shape: {embeddings.shape}")
-        print(f"   Labels count: {len(labels)}")
-        print(f"   Unique labels: {np.unique(labels)}")
-        
-    except Exception as e:
-        print(f"❌ Error in main: {e}")
-        import traceback
-        traceback.print_exc()
+    where = ["e.version = %s"]
+    params = [version]
+    if noise is not None:
+        where.append("e.noise = %s")
+        params.append(noise)
+    if denoiser_name is not None:
+        where.append("e.denoiser_name = %s")
+        params.append(denoiser_name)
+    where_sql = " AND ".join(where)
 
-if __name__ == "__main__":
-    main()
+    sql = f"""
+      SELECT e.segment_id,
+             e.embedding::float4[] AS emb,
+             s.{label_col} AS label,
+             s.video_id AS video_id
+      FROM {table} e
+      JOIN segments s USING (segment_id)
+      WHERE {where_sql}
+      ORDER BY e.segment_id
+    """
+
+    print(f"Loading embeddings for model={model_name}, version={version}, mode={mode}")
+    
+    with _connect_neon() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+    
+    if not rows:
+        raise ValueError(f"No embeddings found for {model_name} version {version}")
+    
+    # Parse results
+    seg_ids = [r[0] for r in rows]
+    embs = [np.array(r[1], dtype=np.float32) for r in rows]
+    labels = np.array([int(r[2]) for r in rows], dtype=np.int64)
+    video_ids = [r[3] for r in rows]
+    
+    all_embeddings = np.vstack(embs) if embs else np.zeros((0, 0), dtype=np.float32)
+    
+    print(f"Loaded {len(seg_ids)} samples | dim: {all_embeddings.shape[1]} | table: {table}")
+    print(f"Label distribution: {np.bincount(labels)}")
+    
+    return all_embeddings, labels, video_ids, seg_ids
