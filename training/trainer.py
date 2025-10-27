@@ -38,6 +38,7 @@ class ModelTrainer:
             self._train_stage_b(model, data_loaders, training_config)
         
         # Evaluate model
+        # Use standard loaders for evaluation (not episodic)
         results = self.evaluator.evaluate_model(
             model, 
             data_loaders['train'],
@@ -45,6 +46,15 @@ class ModelTrainer:
             data_loaders['test'],
             evaluation_config
         )
+        
+        # Also evaluate on episodic test loader for few-shot
+        if 'test_het_eval' in data_loaders:
+            few_shot_results = self.evaluator._evaluate_few_shot_episodic(
+                data_loaders['train'],
+                data_loaders['test_het_eval'],
+                model
+            )
+            results.update(few_shot_results)
         
         return results
     

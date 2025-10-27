@@ -1,0 +1,28 @@
+{
+    "name": "base_embeddings",
+    "data_config": {
+        "model_name": "openl3",
+        "version": "2025-09-12",
+        "noise": "none",
+        "denoiser_name": "none"
+    },
+    "model_config": {
+        "type": "base_embeddings"
+    },
+    "training_config": {
+        "stage_a": false,
+        "stage_b": false,
+        "batch_size": 256
+    },
+    "evaluation_config": {
+        "mahalanobis": true,
+        "linear_probe": true,
+        "mlp_classifier": true,
+        "knn": true,
+        "few_shot": true,
+        "eval_n_way": 5,
+        "eval_k_shot": 5,
+        "eval_n_query": 15,
+        "eval_episodes": 50
+    }
+}

@@ -140,11 +140,26 @@ class DirectClassifierModel(BaseEmbeddingModel):
         return x  # Return raw embeddings
 
 # Model factory function
+class BaseEmbeddingsModel(BaseEmbeddingModel):
+    """Simple model that just returns raw embeddings"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+    
+    def forward(self, x):
+        return x
+    
+    def get_embeddings(self, x):
+        return x
+
+
 def create_model(model_type: str, config: Dict[str, Any]) -> BaseEmbeddingModel:
     """Factory function to create models"""
     if model_type == "orthogonal":
         return OrthogonalModel(config)
     elif model_type == "direct_classifier":
         return DirectClassifierModel(config)
+    elif model_type == "base_embeddings":
+        return BaseEmbeddingsModel(config)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
