@@ -28,14 +28,14 @@
     }
   },
   "results": {
-    "mahalanobis_val_auc": 0.7289549308014818,
-    "mahalanobis_test_auc": 0.7073753271210516,
-    "linear_probe_val_auc": 0.9914396616334874,
-    "linear_probe_test_auc": 0.9909645594545592,
-    "mlp_val_auc": 0.7874088054227297,
-    "mlp_test_auc": 0.8013231456908415,
+    "mahalanobis_val_auc": 0.7289547947083086,
+    "mahalanobis_test_auc": 0.7073752488951769,
+    "linear_probe_val_auc": 0.9913329062599944,
+    "linear_probe_test_auc": 0.9909194426813202,
+    "mlp_val_auc": 0.8277282744260513,
+    "mlp_test_auc": 0.8405134777706316,
     "knn_test_acc_1": 0.0,
     "knn_test_acc_5": 0.0,
-    "few_shot_acc": 0.717
+    "few_shot_acc": 0.708
   }
 }
