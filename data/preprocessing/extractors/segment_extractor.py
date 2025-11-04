@@ -141,11 +141,16 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
 
     return pd.DataFrame(segment_rows)
 
-def insert_segments_to_neon(segment_metadata_df: pd.DataFrame, segment_writer: NeonSegmentWriter, created_at: str):
+def insert_segments_to_neon(segment_metadata_df: pd.DataFrame, segment_writer: NeonSegmentWriter, created_at: str, limit: Optional[int] = None):
     # Check if there are any segments to insert
     if len(segment_metadata_df) == 0:
         print("⚠️  No segments to insert - skipping database insertion")
         return 0
+    
+    # Apply limit for testing purposes
+    if limit is not None:
+        segment_metadata_df = segment_metadata_df.head(limit)
+        print(f"🧪 TEST MODE: Limiting to {limit} segments")
     
     successful_inserts = 0
     failed_inserts = 0
@@ -195,11 +200,17 @@ def insert_segments_to_neon(segment_metadata_df: pd.DataFrame, segment_writer: N
     return successful_inserts
 
 
-def extract_and_insert_segments(video_root: str, created_at: str, segment_writer: Optional[NeonSegmentWriter] = None) -> int:
+def extract_and_insert_segments(video_root: str, created_at: str, segment_writer: Optional[NeonSegmentWriter] = None, limit: Optional[int] = None) -> int:
     """
     Extract segments from a video root and insert into DB using provided created_at.
     
     If segment_writer is provided, writes to Neon. Otherwise falls back to SQLite for backwards compatibility.
+    
+    Args:
+        video_root: Root directory containing video files
+        created_at: ISO8601 timestamp for created_at field
+        segment_writer: Optional NeonSegmentWriter for Neon writes
+        limit: Optional limit on number of segments to process (for testing)
 
     Returns number of segments inserted.
     """
@@ -207,13 +218,16 @@ def extract_and_insert_segments(video_root: str, created_at: str, segment_writer
     segment_df = generate_segment_metadata(metadata_df)
     
     if segment_writer is not None:
-        actual_inserted = insert_segments_to_neon(segment_df, segment_writer, created_at)
+        actual_inserted = insert_segments_to_neon(segment_df, segment_writer, created_at, limit=limit)
         # Flush to ensure segments are persisted before continuing
         segment_writer.flush_all()
     else:
         # Fallback to SQLite for backwards compatibility
         config = load_config()
         db_path = config["database"]["embedding_db_path"]
+        if limit is not None:
+            segment_df = segment_df.head(limit)
+            print(f"🧪 TEST MODE: Limiting to {limit} segments")
         actual_inserted = insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
     
     return actual_inserted

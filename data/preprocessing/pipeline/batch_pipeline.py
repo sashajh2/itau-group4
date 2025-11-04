@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--end", type=int, default=50, help="End part (inclusive), e.g., 50 for 050")
     parser.add_argument("--base-dir", type=str, default="./data/temp_video_extracted/AV1M", help="Base local dir for downloads")
     parser.add_argument("--version", type=str, default="2025-09-12", help="Version string")
+    parser.add_argument("--test-limit", type=int, default=None, help="Limit number of segments per part (for testing)")
     args = parser.parse_args()
 
     config = load_config()
@@ -55,7 +56,7 @@ def main():
 
             # Step 2: Extract segments into Neon with a shared created_at for this part
             created_at = datetime.now(timezone.utc).isoformat()
-            num_segments = extract_and_insert_segments(lrs3_root, created_at, segment_writer=segment_writer)
+            num_segments = extract_and_insert_segments(lrs3_root, created_at, segment_writer=segment_writer, limit=args.test_limit)
             print(f"Inserted {num_segments} segments for part {part_str}")
             # Flush segments after each part to ensure they're persisted
             segment_writer.flush_all()
