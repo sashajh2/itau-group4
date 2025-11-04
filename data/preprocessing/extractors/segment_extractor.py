@@ -6,8 +6,10 @@ import random
 import sqlite3
 import argparse
 import pandas as pd
+from typing import Optional
 from utils.embedding_utils import get_video_duration, sample_real_segment
 from utils.config_loader import load_config
+from ..storage.neon_writer import NeonSegmentWriter
 
 def load_video_metadata(base_dir: str) -> pd.DataFrame:
     entries = []
@@ -139,15 +141,12 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
 
     return pd.DataFrame(segment_rows)
 
-def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, created_at: str):
+def insert_segments_to_neon(segment_metadata_df: pd.DataFrame, segment_writer: NeonSegmentWriter, created_at: str):
     # Check if there are any segments to insert
     if len(segment_metadata_df) == 0:
         print("⚠️  No segments to insert - skipping database insertion")
         return 0
     
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
     successful_inserts = 0
     failed_inserts = 0
     
@@ -168,6 +167,84 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
             if i % 100 == 0:
                 print(f"🔍 Processing segment {i}/{len(segment_metadata_df)}: {segment_id}")
 
+            segment_writer.add(
+                segment_id=segment_id,
+                source="AVDeepfake1M",
+                video_id=video_id,
+                video_path=row['video_path'],
+                start_time=float(row['segment_start']),
+                duration=float(row['segment_end'] - row['segment_start']),
+                video_label=row['video_label'],
+                audio_label=row['audio_label'],
+                audio_model=row['audio_model'],
+                video_model=row['video_model'],
+                created_at=created_at,
+            )
+            successful_inserts += 1
+        except Exception as e:
+            failed_inserts += 1
+            print(f"❌ Failed to insert segment {i}: {e}")
+            print(f"   Row data: {dict(row)}")
+            if 'video_path_parts' in locals():
+                print(f"   Video path parts: {video_path_parts}")
+            if 'segment_id' in locals():
+                print(f"   Generated segment_id: {segment_id}")
+    
+    print(f"📊 Insert results: {successful_inserts} successful, {failed_inserts} failed")
+    
+    return successful_inserts
+
+
+def extract_and_insert_segments(video_root: str, created_at: str, segment_writer: Optional[NeonSegmentWriter] = None) -> int:
+    """
+    Extract segments from a video root and insert into DB using provided created_at.
+    
+    If segment_writer is provided, writes to Neon. Otherwise falls back to SQLite for backwards compatibility.
+
+    Returns number of segments inserted.
+    """
+    metadata_df = load_video_metadata(video_root)
+    segment_df = generate_segment_metadata(metadata_df)
+    
+    if segment_writer is not None:
+        actual_inserted = insert_segments_to_neon(segment_df, segment_writer, created_at)
+        # Flush to ensure segments are persisted before continuing
+        segment_writer.flush_all()
+    else:
+        # Fallback to SQLite for backwards compatibility
+        config = load_config()
+        db_path = config["database"]["embedding_db_path"]
+        actual_inserted = insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
+    
+    return actual_inserted
+
+
+def insert_segments_to_sqlite_fallback(segment_metadata_df: pd.DataFrame, db_path: str, created_at: str):
+    """Fallback SQLite insertion for backwards compatibility."""
+    # Check if there are any segments to insert
+    if len(segment_metadata_df) == 0:
+        print("⚠️  No segments to insert - skipping database insertion")
+        return 0
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    successful_inserts = 0
+    failed_inserts = 0
+    
+    print(f"🔍 Starting insertion of {len(segment_metadata_df)} segments (SQLite fallback)...")
+    
+    for i, (_, row) in enumerate(segment_metadata_df.iterrows()):
+        try:
+            video_path_parts = row['video_path'].split('/')
+            parent_folder = video_path_parts[-3]  # e.g., '0N1oA9LUEc4'
+            child_folder = video_path_parts[-2]   # e.g., '00008'
+            video_name = os.path.basename(row['video_path']).replace('.mp4', '')
+            segment_ms = int(row['segment_start'] * 1000)
+
+            segment_id = f"{parent_folder}/{child_folder}/{video_name}_{segment_ms}_{int(row['segment_end'] * 1000)}"
+            video_id = f"{parent_folder}/{child_folder}"
+
             cursor.execute("""
                 INSERT OR REPLACE INTO segments (
                     segment_id, source, video_id, video_path, start_time, duration, video_label, audio_label, created_at, audio_model, video_model
@@ -182,16 +259,13 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
                 row['video_label'],
                 row['audio_label'],
                 created_at,
-                row['audio_model'], # audio_model
-                row['video_model']  # video_model
+                row['audio_model'],
+                row['video_model']
             ))
             successful_inserts += 1
         except Exception as e:
             failed_inserts += 1
             print(f"❌ Failed to insert segment {i}: {e}")
-            print(f"   Row data: {dict(row)}")
-            print(f"   Video path parts: {video_path_parts}")
-            print(f"   Generated segment_id: {segment_id}")
     
     print(f"📊 Insert results: {successful_inserts} successful, {failed_inserts} failed")
 
@@ -199,21 +273,6 @@ def insert_segments_to_sqlite(segment_metadata_df: pd.DataFrame, db_path: str, c
     conn.close()
     
     return successful_inserts
-
-
-def extract_and_insert_segments(video_root: str, created_at: str) -> int:
-    """
-    Extract segments from a video root and insert into DB using provided created_at.
-
-    Returns number of segments inserted.
-    """
-    config = load_config()
-    db_path = config["database"]["embedding_db_path"]
-
-    metadata_df = load_video_metadata(video_root)
-    segment_df = generate_segment_metadata(metadata_df)
-    actual_inserted = insert_segments_to_sqlite(segment_df, db_path, created_at)
-    return actual_inserted
 
 def main():
     parser = argparse.ArgumentParser(description="Extract segments and insert into SQLite with created_at")
@@ -237,7 +296,7 @@ def main():
     print(f"Total segments: {len(segment_df)}")
 
     print(f"Inserting {len(segment_df)} segments into the database with created_at={created_at}...")
-    insert_segments_to_sqlite(segment_df, db_path, created_at)
+    insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
     print("Done!")
     print(f"CREATED_AT={created_at}")
 

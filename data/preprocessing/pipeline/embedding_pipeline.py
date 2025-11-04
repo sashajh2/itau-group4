@@ -1,4 +1,3 @@
-from db.embedding_store_utils import get_segments_by_created_at
 from utils.config_loader import load_config
 from ..generators.embedding_generator import embed_segments
 from ..generators.embedding_saver import (
@@ -10,26 +9,56 @@ from ..storage.neon_writer import NeonEmbeddingWriter
 from ..storage.dropbox_storage import create_faiss_index_and_upload
 import argparse
 import os
+import psycopg2
+from typing import Optional
 
-def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/generated", shard_writer: ShardWriter = None, neon_version: str | None = None) -> tuple[int, int]:
+def get_segments_by_created_at_neon(created_at: str) -> list[dict]:
+    """Query segments from Neon Postgres by created_at timestamp."""
+    config = load_config()
+    dsn = config["database"]["postgres"]["neon_database_url"]
+    
+    conn = psycopg2.connect(dsn)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT segment_id, source, video_id, video_path, start_time, duration,
+               video_label, audio_label, audio_model, video_model, created_at
+        FROM segments
+        WHERE created_at = %s
+        ORDER BY segment_id
+    """, (created_at,))
+    
+    columns = [desc[0] for desc in cursor.description]
+    rows = cursor.fetchall()
+    segments = [dict(zip(columns, row)) for row in rows]
+    
+    cursor.close()
+    conn.close()
+    
+    return segments
+
+
+def generate_for_created_at(
+    created_at: str, 
+    output_dir: str = "./embeddings/generated", 
+    shard_writer: Optional[ShardWriter] = None, 
+    neon_writer: Optional[NeonEmbeddingWriter] = None
+) -> tuple[int, int]:
     """
     Generate embeddings for all segments with the given created_at.
 
-    Returns (num_segments, num_uploaded_indices)
+    Args:
+        created_at: ISO8601 timestamp to filter segments
+        output_dir: Directory for output (currently unused but kept for compatibility)
+        shard_writer: Optional ShardWriter for file-based storage
+        neon_writer: Optional NeonEmbeddingWriter for Neon Postgres storage
+
+    Returns (num_segments, num_embeddings_written)
     """
-    config = load_config()
-    db_path = config["database"]["embedding_db_path"]
     print(f"Getting segments for {created_at}")
-    segments = get_segments_by_created_at(db_path, created_at)
+    segments = get_segments_by_created_at_neon(created_at)
     print(f"Found {len(segments)} segments")
     
-    # Debug: Check if there are any segments with this created_at
-    import sqlite3
-    with sqlite3.connect(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM segments WHERE created_at = ?", (created_at,))
-        total_count = cursor.fetchone()[0]
-        print(f"🔍 Debug: Total segments in DB with created_at={created_at}: {total_count}")
     if len(segments) == 0:
         print("❌ No segments found for the specified created_at timestamp")
         return 0, 0
@@ -39,11 +68,8 @@ def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/gen
     print("✅ Embedding generation complete")
 
     attempted = 0
-    neon_writer = None
-    if shard_writer is None and neon_version is None:
-        raise ValueError("Provide either shard_writer or neon_version for Neon insertion")
-    if neon_version is not None:
-        neon_writer = NeonEmbeddingWriter(version=neon_version)
+    if shard_writer is None and neon_writer is None:
+        raise ValueError("Provide either shard_writer or neon_writer")
     
     for (mode, model, noise, denoiser_name), data in accumulator.items():
         embs = data["embeddings"]
@@ -55,9 +81,8 @@ def generate_for_created_at(created_at: str, output_dir: str = "./embeddings/gen
                 shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
             attempted += 1
 
-    if neon_writer is not None:
-        neon_writer.flush_all()
-        neon_writer.close()
+    # Note: Don't flush/close neon_writer here - let the caller manage it
+    # This allows batch_pipeline to flush at appropriate times
     return len(segments), attempted
 
 
