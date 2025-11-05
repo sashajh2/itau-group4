@@ -5,9 +5,8 @@ from datetime import datetime, timezone
 from tqdm import tqdm
 
 from ...loaders.avdeepfake import download_and_extract_part
-from ..extractors.segment_extractor import extract_and_insert_segments
+from ..extractors.av_deepfake_segment_extractor import extract_and_insert_segments
 from .embedding_pipeline import generate_for_created_at
-from utils.config_loader import load_config
 from ..storage.shard_writer import ShardWriter
 from ..storage.neon_writer import NeonSegmentWriter, NeonEmbeddingWriter
 
@@ -21,8 +20,6 @@ def main():
     parser.add_argument("--test-limit", type=int, default=None, help="Limit number of segments per part (for testing)")
     args = parser.parse_args()
 
-    config = load_config()
-    
     # One Neon version tag for the whole batch (use pooler URL in config)
     neon_version = args.version
     
@@ -57,9 +54,10 @@ def main():
             # Step 2: Extract segments into Neon with a shared created_at for this part
             created_at = datetime.now(timezone.utc).isoformat()
             num_segments = extract_and_insert_segments(lrs3_root, created_at, segment_writer=segment_writer, limit=args.test_limit)
-            print(f"Inserted {num_segments} segments for part {part_str}")
+            print(f"📝 Inserted {num_segments} segments into Neon for part {part_str}")
             # Flush segments after each part to ensure they're persisted
             segment_writer.flush_all()
+            print("✅ Flushed segment buffer to Neon")
 
             # Step 3: Generate embeddings for this created_at; write to Neon (batched)
             num_segments_processed, num_embeddings = generate_for_created_at(
@@ -68,7 +66,11 @@ def main():
                 shard_writer=None, 
                 neon_writer=embedding_writer
             )
-            print(f"Processed: segments={num_segments_processed}, embeddings={num_embeddings}")
+            print(f"🧠 Read {num_segments_processed} segments from Neon for embeddings")
+            print(f"🧮 Generated {num_embeddings} embeddings (attempted writes)")
+            # Flush embeddings after each part to persist
+            embedding_writer.flush_all()
+            print("✅ Flushed embedding buffer to Neon")
             total_segments += num_segments_processed
             total_attempted += num_embeddings
 
@@ -99,3 +101,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

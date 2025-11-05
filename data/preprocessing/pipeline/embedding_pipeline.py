@@ -31,6 +31,7 @@ def get_segments_by_created_at_neon(created_at: str) -> list[dict]:
     columns = [desc[0] for desc in cursor.description]
     rows = cursor.fetchall()
     segments = [dict(zip(columns, row)) for row in rows]
+    print(f"📥 Queried {len(segments)} segments from Neon for created_at={created_at}")
     
     cursor.close()
     conn.close()

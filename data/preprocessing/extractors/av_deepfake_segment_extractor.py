@@ -216,11 +216,10 @@ def extract_and_insert_segments(video_root: str, created_at: str, segment_writer
     """
     metadata_df = load_video_metadata(video_root)
     segment_df = generate_segment_metadata(metadata_df)
+    print(f"🧩 Created {len(segment_df)} candidate segments from metadata")
     
     if segment_writer is not None:
         actual_inserted = insert_segments_to_neon(segment_df, segment_writer, created_at, limit=limit)
-        # Flush to ensure segments are persisted before continuing
-        segment_writer.flush_all()
     else:
         # Fallback to SQLite for backwards compatibility
         config = load_config()
@@ -317,3 +316,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
