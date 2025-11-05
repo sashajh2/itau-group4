@@ -21,8 +21,7 @@ def main():
     parser.add_argument("--version", type=str, default="2025-09-12", help="Version string for shard writer")
     args = parser.parse_args()
 
-    # Init config; Neon path is default (uses pooler URL in config)
-    config = load_config()
+    # One Neon version tag for the whole batch
     neon_version = args.version
     
     # Create writers for the entire batch
@@ -69,19 +68,21 @@ def main():
                 if log_path:
                     print(f"EXTRACTION_LOG={log_path}")
 
-                # Step 2: Extract segments into DB with a shared created_at for this part
+                # Step 2: Extract segments into Neon with a shared created_at for this part
                 print(f"🔍 Step 2: Extracting segments and inserting into database...")
                 created_at = datetime.now(timezone.utc).isoformat()
                 num_segments = extract_and_insert_share_veo3_segments(
                     part_out_dir, 
                     created_at, 
-                    args.segment_duration
+                    args.segment_duration,
+                    segment_writer=segment_writer
                 )
-                print(f"✅ Inserted {num_segments} segments for part {part_str}")
+                print(f"📝 Inserted {num_segments} segments into Neon for part {part_str}")
                 print(f"📅 Created at timestamp: {created_at}")
-
+                
                 # Flush segments after each part to ensure they're persisted
                 segment_writer.flush_all()
+                print("✅ Flushed segment buffer to Neon")
                 
                 # Step 3: Generate embeddings for this created_at (Neon write)
                 print(f"🧠 Step 3: Generating embeddings...")
@@ -91,7 +92,11 @@ def main():
                     shard_writer=None, 
                     neon_writer=embedding_writer
                 )
-                print(f"✅ Processed: segments={num_segments_processed}, embeddings={num_embeddings}")
+                print(f"🧠 Read {num_segments_processed} segments from Neon for embeddings")
+                print(f"🧮 Generated {num_embeddings} embeddings (attempted writes)")
+                # Flush embeddings after each part to persist
+                embedding_writer.flush_all()
+                print("✅ Flushed embedding buffer to Neon")
 
                 # Step 4: Clean up if requested
                 if args.cleanup:
