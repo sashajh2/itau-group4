@@ -64,8 +64,8 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
             for seg in row['audio_fake_segments']:
                 start, end = seg[0], seg[1]
                 segment_rows.append({
-                    'audio_label': 1,
-                    'video_label': 1,
+                    'audio_label': 1.0,  # Store as float for consistency
+                    'video_label': 1.0,
                     'overall_label': 1,
                     'video_path': row['video_path'],
                     'json_path': row['json_path'],
@@ -81,8 +81,8 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
             for seg in row['audio_fake_segments']:
                 start, end = seg[0], seg[1]
                 segment_rows.append({
-                    'audio_label': 1,
-                    'video_label': 0,
+                    'audio_label': 1.0,
+                    'video_label': 0.0,
                     'overall_label': 1,
                     'video_path': row['video_path'],
                     'json_path': row['json_path'],
@@ -97,8 +97,8 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
             for seg in row['visual_fake_segments']:
                 start, end = seg[0], seg[1]
                 segment_rows.append({
-                    'audio_label': 0,
-                    'video_label': 1,
+                    'audio_label': 0.0,
+                    'video_label': 1.0,
                     'overall_label': 1,
                     'video_path': row['video_path'],
                     'json_path': row['json_path'],
@@ -122,8 +122,8 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
                 segment_length = round(random.uniform(*real_clip_duration_bounds), 2)
                 start, end = sample_real_segment(real_duration, segment_length)
                 segment_rows.append({
-                    'audio_label': 0,
-                    'video_label': 0,
+                    'audio_label': 0.0,
+                    'video_label': 0.0,
                     'overall_label': 0,
                     'video_path': row['video_path'],
                     'json_path': row['json_path'],
@@ -140,6 +140,159 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
     print(f"   Processed videos: {processed_videos}")
 
     return pd.DataFrame(segment_rows)
+
+
+def _interval_overlap(a_start: float, a_end: float, b_start: float, b_end: float) -> float:
+    """Calculate overlap duration between two time intervals."""
+    start = max(a_start, b_start)
+    end = min(a_end, b_end)
+    return max(0.0, end - start)
+
+
+def _proportion_fake(segment_start: float, segment_end: float, fake_segments: Optional[list]) -> float:
+    """
+    Calculate the proportion of fake content within a segment.
+    
+    Args:
+        segment_start: Start time of the segment
+        segment_end: End time of the segment
+        fake_segments: List of [start, end] tuples for fake segments, or None
+        
+    Returns:
+        Proportion of fake content (0.0 to 1.0)
+    """
+    if not fake_segments:
+        return 0.0
+    
+    total = segment_end - segment_start
+    if total <= 0:
+        return 0.0
+    
+    overlap = 0.0
+    for seg in fake_segments:
+        try:
+            fs, fe = float(seg[0]), float(seg[1])
+            overlap += _interval_overlap(segment_start, segment_end, fs, fe)
+        except (ValueError, TypeError, IndexError):
+            continue
+    
+    return min(1.0, max(0.0, overlap / total))
+
+
+def generate_uniform_segments(
+    video_metadata_df: pd.DataFrame, 
+    segment_length: float, 
+    stride: Optional[float] = None, 
+    soft_threshold: float = 0.5
+) -> pd.DataFrame:
+    """
+    Generate uniform-length segments from videos with soft labels.
+    
+    Args:
+        video_metadata_df: DataFrame with video metadata (from load_video_metadata)
+        segment_length: Length of each segment in seconds
+        stride: Stride between segments (default: segment_length, i.e., no overlap)
+        soft_threshold: Threshold for determining model assignment (0.0 to 1.0)
+        
+    Returns:
+        DataFrame with segment metadata. audio_label and video_label contain soft labels (0.0-1.0).
+    """
+    if stride is None:
+        stride = segment_length
+    
+    segment_rows = []
+    processed_videos = 0
+    
+    for _, row in video_metadata_df.iterrows():
+        duration = get_video_duration(row['video_path'])
+        if not duration or duration <= 0:
+            print(f"⚠️  Skipping video due to duration error: {row['video_path']}")
+            continue
+        
+        start = 0.0
+        while start + 1e-6 < duration:
+            end = min(duration, start + segment_length)
+            
+            # Drop extremely short tail segments
+            if end - start <= 0.02:
+                break
+            
+            # Calculate soft labels (proportion of fake content) - store directly as labels
+            audio_soft = _proportion_fake(start, end, row.get('audio_fake_segments'))
+            video_soft = _proportion_fake(start, end, row.get('visual_fake_segments'))
+            
+            # Determine model (use model from original if mostly fake, otherwise None)
+            audio_model = row['audio_model'] if audio_soft >= soft_threshold else None
+            video_model = row['video_model'] if video_soft >= soft_threshold else None
+            
+            segment_rows.append({
+                'audio_label': audio_soft,  # Store soft label directly (0.0 to 1.0)
+                'video_label': video_soft,  # Store soft label directly (0.0 to 1.0)
+                'video_path': row['video_path'],
+                'json_path': row['json_path'],
+                'source_folder': row['source_folder'],
+                'segment_start': start,
+                'segment_end': end,
+                'audio_model': audio_model,
+                'video_model': video_model
+            })
+            
+            if end >= duration:
+                break
+            start += stride
+        
+        processed_videos += 1
+    
+    print(f"📊 Uniform segmentation summary: processed_videos={processed_videos}, segments={len(segment_rows)}")
+    return pd.DataFrame(segment_rows)
+
+
+def extract_and_insert_uniform_segments(
+    video_root: str, 
+    created_at: str, 
+    segment_length: float, 
+    stride: Optional[float] = None, 
+    soft_threshold: float = 0.5,
+    segment_writer: Optional[NeonSegmentWriter] = None,
+    limit: Optional[int] = None
+) -> int:
+    """
+    Extract uniform-length segments from videos and insert into DB.
+    
+    Args:
+        video_root: Root directory containing video files
+        created_at: ISO8601 timestamp for created_at field
+        segment_length: Length of each uniform segment in seconds
+        stride: Stride between segments (default: segment_length)
+        soft_threshold: Threshold to binarize soft labels (0.0 to 1.0)
+        segment_writer: Optional NeonSegmentWriter for Neon writes
+        limit: Optional limit on number of segments to process (for testing)
+        
+    Returns:
+        Number of segments inserted
+    """
+    metadata_df = load_video_metadata(video_root)
+    segment_df = generate_uniform_segments(
+        metadata_df, 
+        segment_length=segment_length, 
+        stride=stride, 
+        soft_threshold=soft_threshold
+    )
+    print(f"🧩 Created {len(segment_df)} candidate segments (uniform segmentation)")
+    
+    if segment_writer is not None:
+        actual_inserted = insert_segments_to_neon(segment_df, segment_writer, created_at, limit=limit)
+    else:
+        # Fallback to SQLite for backwards compatibility
+        config = load_config()
+        db_path = config["database"]["embedding_db_path"]
+        if limit is not None:
+            segment_df = segment_df.head(limit)
+            print(f"🧪 TEST MODE: Limiting to {limit} segments")
+        actual_inserted = insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
+    
+    return actual_inserted
+
 
 def insert_segments_to_neon(segment_metadata_df: pd.DataFrame, segment_writer: NeonSegmentWriter, created_at: str, limit: Optional[int] = None):
     # Check if there are any segments to insert
@@ -179,8 +332,8 @@ def insert_segments_to_neon(segment_metadata_df: pd.DataFrame, segment_writer: N
                 video_path=row['video_path'],
                 start_time=float(row['segment_start']),
                 duration=float(row['segment_end'] - row['segment_start']),
-                video_label=row['video_label'],
-                audio_label=row['audio_label'],
+                video_label=float(row['video_label']),  # Ensure float type
+                audio_label=float(row['audio_label']),  # Ensure float type
                 audio_model=row['audio_model'],
                 video_model=row['video_model'],
                 created_at=created_at,
@@ -200,7 +353,16 @@ def insert_segments_to_neon(segment_metadata_df: pd.DataFrame, segment_writer: N
     return successful_inserts
 
 
-def extract_and_insert_segments(video_root: str, created_at: str, segment_writer: Optional[NeonSegmentWriter] = None, limit: Optional[int] = None) -> int:
+def extract_and_insert_segments(
+    video_root: str, 
+    created_at: str, 
+    segment_writer: Optional[NeonSegmentWriter] = None, 
+    limit: Optional[int] = None,
+    segmentation_mode: str = "full",
+    uniform_segment_length: Optional[float] = None,
+    uniform_stride: Optional[float] = None,
+    soft_threshold: float = 0.5
+) -> int:
     """
     Extract segments from a video root and insert into DB using provided created_at.
     
@@ -211,25 +373,45 @@ def extract_and_insert_segments(video_root: str, created_at: str, segment_writer
         created_at: ISO8601 timestamp for created_at field
         segment_writer: Optional NeonSegmentWriter for Neon writes
         limit: Optional limit on number of segments to process (for testing)
+        segmentation_mode: "full" (no partials) or "uniform"
+        uniform_segment_length: Length of uniform segments (required if mode="uniform")
+        uniform_stride: Stride between uniform segments (default: segment_length)
+        soft_threshold: Threshold for binarizing soft labels (default: 0.5)
 
     Returns number of segments inserted.
     """
-    metadata_df = load_video_metadata(video_root)
-    segment_df = generate_segment_metadata(metadata_df)
-    print(f"🧩 Created {len(segment_df)} candidate segments from metadata")
-    
-    if segment_writer is not None:
-        actual_inserted = insert_segments_to_neon(segment_df, segment_writer, created_at, limit=limit)
+    if segmentation_mode == "uniform":
+        if uniform_segment_length is None:
+            raise ValueError("uniform_segment_length is required when segmentation_mode='uniform'")
+        return extract_and_insert_uniform_segments(
+            video_root,
+            created_at,
+            segment_length=uniform_segment_length,
+            stride=uniform_stride,
+            soft_threshold=soft_threshold,
+            segment_writer=segment_writer,
+            limit=limit
+        )
+    elif segmentation_mode == "full":
+        # Default: metadata-based segmentation with fully real/fake segments
+        metadata_df = load_video_metadata(video_root)
+        segment_df = generate_segment_metadata(metadata_df)
+        print(f"🧩 Created {len(segment_df)} candidate segments from metadata")
+        
+        if segment_writer is not None:
+            actual_inserted = insert_segments_to_neon(segment_df, segment_writer, created_at, limit=limit)
+        else:
+            # Fallback to SQLite for backwards compatibility
+            config = load_config()
+            db_path = config["database"]["embedding_db_path"]
+            if limit is not None:
+                segment_df = segment_df.head(limit)
+                print(f"🧪 TEST MODE: Limiting to {limit} segments")
+            actual_inserted = insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
+        
+        return actual_inserted
     else:
-        # Fallback to SQLite for backwards compatibility
-        config = load_config()
-        db_path = config["database"]["embedding_db_path"]
-        if limit is not None:
-            segment_df = segment_df.head(limit)
-            print(f"🧪 TEST MODE: Limiting to {limit} segments")
-        actual_inserted = insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
-    
-    return actual_inserted
+        raise ValueError("segmentation_mode must be one of {'full','uniform'}")
 
 
 def insert_segments_to_sqlite_fallback(segment_metadata_df: pd.DataFrame, db_path: str, created_at: str):

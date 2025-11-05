@@ -58,8 +58,8 @@ class NeonSegmentWriter:
         video_path: str,
         start_time: float,
         duration: float,
-        video_label: int,
-        audio_label: int,
+        video_label: float,  # Changed to float to support soft labels (0.0-1.0)
+        audio_label: float,  # Changed to float to support soft labels (0.0-1.0)
         audio_model: Optional[str],
         video_model: Optional[str],
         created_at: str,

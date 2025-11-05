@@ -18,6 +18,10 @@ def main():
     parser.add_argument("--base-dir", type=str, default="./data/temp_video_extracted/AV1M", help="Base local dir for downloads")
     parser.add_argument("--version", type=str, default="2025-09-12", help="Version string")
     parser.add_argument("--test-limit", type=int, default=None, help="Limit number of segments per part (for testing)")
+    parser.add_argument("--segmentation", type=str, choices=["full", "uniform"], default="full", help="Segmentation strategy: 'full' (no partials) or 'uniform'")
+    parser.add_argument("--uniform-length", type=float, default=0.32, help="Uniform segment length in seconds (when --segmentation=uniform)")
+    parser.add_argument("--uniform-stride", type=float, default=None, help="Stride in seconds for uniform segmentation (default: same as --uniform-length)")
+    parser.add_argument("--soft-threshold", type=float, default=0.5, help="Threshold to binarize soft labels for uniform segmentation (0.0-1.0)")
     args = parser.parse_args()
 
     # One Neon version tag for the whole batch (use pooler URL in config)
@@ -53,8 +57,17 @@ def main():
 
             # Step 2: Extract segments into Neon with a shared created_at for this part
             created_at = datetime.now(timezone.utc).isoformat()
-            num_segments = extract_and_insert_segments(lrs3_root, created_at, segment_writer=segment_writer, limit=args.test_limit)
-            print(f"📝 Inserted {num_segments} segments into Neon for part {part_str}")
+            num_segments = extract_and_insert_segments(
+                lrs3_root, 
+                created_at, 
+                segment_writer=segment_writer, 
+                limit=args.test_limit,
+                segmentation_mode=args.segmentation,
+                uniform_segment_length=args.uniform_length if args.segmentation == "uniform" else None,
+                uniform_stride=args.uniform_stride if args.segmentation == "uniform" else None,
+                soft_threshold=args.soft_threshold
+            )
+            print(f"📝 Inserted {num_segments} segments into Neon for part {part_str} (mode: {args.segmentation})")
             # Flush segments after each part to ensure they're persisted
             segment_writer.flush_all()
             print("✅ Flushed segment buffer to Neon")
