@@ -1,6 +1,6 @@
 import psycopg2
 from psycopg2.extras import execute_values
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import numpy as np
 
 from utils.config_loader import load_config
@@ -29,6 +29,91 @@ def _to_vector_literal(vec: np.ndarray) -> str:
     else:
         vec_list = list(vec)
     return "[" + ",".join(str(float(x)) for x in vec_list) + "]"
+
+
+class NeonSegmentWriter:
+    """Batches segment inserts into Neon Postgres.
+
+    Usage:
+      writer = NeonSegmentWriter()
+      writer.add(segment_id, source, video_id, video_path, start_time, duration,
+                 video_label, audio_label, audio_model, video_model, created_at)
+      writer.flush_all()
+    """
+
+    def __init__(self, batch_size: int = 1000):
+        cfg = load_config()
+        dsn = cfg["database"]["postgres"]["neon_database_url"]
+        self.conn = psycopg2.connect(dsn)
+        self.conn.autocommit = False
+        self.cur = self.conn.cursor()
+        self.batch_size = batch_size
+        self.buffer: List[tuple] = []
+
+    def add(
+        self,
+        segment_id: str,
+        source: str,
+        video_id: str,
+        video_path: str,
+        start_time: float,
+        duration: float,
+        video_label: int,
+        audio_label: int,
+        audio_model: Optional[str],
+        video_model: Optional[str],
+        created_at: str,
+    ) -> None:
+        rec = (
+            segment_id,
+            source,
+            video_id,
+            video_path,
+            start_time,
+            duration,
+            video_label,
+            audio_label,
+            audio_model,
+            video_model,
+            created_at,
+        )
+        self.buffer.append(rec)
+        if len(self.buffer) >= self.batch_size:
+            self._flush()
+
+    def _flush(self):
+        if not self.buffer:
+            return
+        execute_values(
+            self.cur,
+            """
+            INSERT INTO segments(
+              segment_id, source, video_id, video_path, start_time, duration,
+              video_label, audio_label, audio_model, video_model, created_at
+            ) VALUES %s
+            ON CONFLICT (segment_id) DO NOTHING
+            """,
+            self.buffer,
+            page_size=len(self.buffer),
+        )
+        self.conn.commit()
+        self.buffer.clear()
+
+    def flush_all(self):
+        self._flush()
+
+    def close(self):
+        try:
+            self.flush_all()
+        finally:
+            try:
+                self.cur.close()
+            except Exception:
+                pass
+            try:
+                self.conn.close()
+            except Exception:
+                pass
 
 
 class NeonEmbeddingWriter:

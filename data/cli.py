@@ -8,9 +8,9 @@ import sys
 from datetime import datetime, timezone
 
 from preprocessing.pipeline.embedding_pipeline import generate_for_created_at
-from preprocessing.pipeline.batch_pipeline import main as batch_process_main
+from preprocessing.pipeline.av_deepfake_batch_pipeline import main as batch_process_main
 from loaders.avdeepfake import download_and_extract_part
-from preprocessing.extractors.segment_extractor import extract_and_insert_segments
+from preprocessing.extractors.av_deepfake_segment_extractor import extract_and_insert_segments
 
 
 def main():

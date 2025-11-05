@@ -11,9 +11,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data.preprocessing.pipeline.embedding_pipeline import generate_for_created_at
-from data.preprocessing.pipeline.batch_pipeline import main as batch_process_main
+from data.preprocessing.pipeline.av_deepfake_batch_pipeline import main as batch_process_main
 from data.loaders.avdeepfake import download_and_extract_part
-from data.preprocessing.extractors.segment_extractor import extract_and_insert_segments
+from data.preprocessing.extractors.av_deepfake_segment_extractor import extract_and_insert_segments
 
 def main():
     """Main entry point for the CLI."""

@@ -4,8 +4,10 @@ import os
 import sqlite3
 import argparse
 from pathlib import Path
+from typing import Optional
 from utils.embedding_utils import get_video_duration
 from utils.config_loader import load_config
+from ..storage.neon_writer import NeonSegmentWriter
 
 
 def get_video_files_from_veo3_generation(base_dir: str) -> list:
@@ -82,9 +84,52 @@ def create_segments_from_video(video_path: str, segment_duration: float = 0.25) 
     return segments
 
 
+def insert_share_veo3_segments_to_neon(segments: list, segment_writer: NeonSegmentWriter, created_at: str):
+    """
+    Insert ShareVeo3 segments into Neon Postgres.
+    
+    Args:
+        segments: List of segment dictionaries
+        segment_writer: NeonSegmentWriter instance
+        created_at: Timestamp for the segments
+    """
+    inserted_count = 0
+    failed_count = 0
+    
+    for segment in segments:
+        video_path = segment['video_path']
+        video_filename = os.path.basename(video_path)
+        video_id = os.path.splitext(video_filename)[0]  # Remove extension
+        
+        # Create segment ID
+        segment_id = f"{video_id}_{segment['segment_id']}"
+        
+        try:
+            segment_writer.add(
+                segment_id=segment_id,
+                source="ShareVeo3",
+                video_id=video_id,
+                video_path=video_path,
+                start_time=float(segment['start_time']),
+                duration=float(segment['duration']),
+                video_label=1,  # video_label = 1 (fake)
+                audio_label=1,  # audio_label = 1 (fake)
+                audio_model="veo3",
+                video_model="veo3",
+                created_at=created_at,
+            )
+            inserted_count += 1
+        except Exception as e:
+            failed_count += 1
+            print(f"⚠️ Error inserting segment {segment_id}: {e}")
+            continue
+    
+    print(f"📝 Inserted {inserted_count} segments into Neon (failed: {failed_count})")
+
+
 def insert_share_veo3_segments_to_sqlite(segments: list, db_path: str, created_at: str, source_folder: str):
     """
-    Insert ShareVeo3 segments into SQLite database.
+    Insert ShareVeo3 segments into SQLite database (fallback).
     
     Args:
         segments: List of segment dictionaries
@@ -134,10 +179,10 @@ def insert_share_veo3_segments_to_sqlite(segments: list, db_path: str, created_a
     conn.commit()
     conn.close()
     
-    print(f"✅ Inserted {inserted_count} segments into database")
+    print(f"✅ Inserted {inserted_count} segments into database (SQLite fallback)")
 
 
-def extract_and_insert_share_veo3_segments(video_root: str, created_at: str, segment_duration: float = 0.25) -> int:
+def extract_and_insert_share_veo3_segments(video_root: str, created_at: str, segment_duration: float = 0.25, segment_writer: Optional[NeonSegmentWriter] = None) -> int:
     """
     Extract segments from ShareVeo3 dataset and insert into DB.
     
@@ -145,13 +190,11 @@ def extract_and_insert_share_veo3_segments(video_root: str, created_at: str, seg
         video_root: Root directory containing the extracted ShareVeo3 data
         created_at: Timestamp for the segments
         segment_duration: Duration of each segment in seconds
+        segment_writer: Optional NeonSegmentWriter for Neon writes
         
     Returns:
         Number of segments inserted
     """
-    config = load_config()
-    db_path = config["database"]["embedding_db_path"]
-    
     print(f"Processing ShareVeo3 dataset from: {video_root}")
     print(f"Segment duration: {segment_duration} seconds")
     print(f"Using created_at timestamp: {created_at}")
@@ -172,13 +215,21 @@ def extract_and_insert_share_veo3_segments(video_root: str, created_at: str, seg
         segments = create_segments_from_video(video_path, segment_duration)
         all_segments.extend(segments)
     
-    print(f"\nTotal segments created: {len(all_segments)}")
+    print(f"🧩 Created {len(all_segments)} candidate segments from videos")
     
     # Insert into database
     if all_segments:
-        insert_share_veo3_segments_to_sqlite(all_segments, db_path, created_at, source_folder)
+        if segment_writer is not None:
+            insert_share_veo3_segments_to_neon(all_segments, segment_writer, created_at)
+            return len(all_segments)
+        else:
+            # Fallback to SQLite
+            config = load_config()
+            db_path = config["database"]["embedding_db_path"]
+            insert_share_veo3_segments_to_sqlite(all_segments, db_path, created_at, source_folder)
+            return len(all_segments)
     
-    return len(all_segments)
+    return 0
 
 
 def main():
