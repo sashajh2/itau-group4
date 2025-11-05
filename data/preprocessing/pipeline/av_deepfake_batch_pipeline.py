@@ -20,7 +20,6 @@ def main():
     parser.add_argument("--segmentation", type=str, choices=["full", "uniform"], default="full", help="Segmentation strategy: 'full' (no partials) or 'uniform'")
     parser.add_argument("--uniform-length", type=float, default=0.32, help="Uniform segment length in seconds (when --segmentation=uniform)")
     parser.add_argument("--uniform-stride", type=float, default=None, help="Stride in seconds for uniform segmentation (default: same as --uniform-length)")
-    parser.add_argument("--soft-threshold", type=float, default=0.5, help="Threshold to binarize soft labels for uniform segmentation (0.0-1.0)")
     args = parser.parse_args()
 
     # One Neon version tag for the whole batch (use pooler URL in config)
@@ -63,8 +62,7 @@ def main():
                 limit=None,
                 segmentation_mode=args.segmentation,
                 uniform_segment_length=args.uniform_length if args.segmentation == "uniform" else None,
-                uniform_stride=args.uniform_stride if args.segmentation == "uniform" else None,
-                soft_threshold=args.soft_threshold
+                uniform_stride=args.uniform_stride if args.segmentation == "uniform" else None
             )
             print(f"📝 Inserted {num_segments} segments into Neon for part {part_str} (mode: {args.segmentation})")
             # Flush segments after each part to ensure they're persisted

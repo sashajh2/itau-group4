@@ -190,8 +190,7 @@ def _proportion_fake(segment_start: float, segment_end: float, fake_segments: Op
 def generate_uniform_segments(
     video_metadata_df: pd.DataFrame, 
     segment_length: float, 
-    stride: Optional[float] = None, 
-    soft_threshold: float = 0.5
+    stride: Optional[float] = None
 ) -> pd.DataFrame:
     """
     Generate uniform-length segments from videos with soft labels.
@@ -200,7 +199,6 @@ def generate_uniform_segments(
         video_metadata_df: DataFrame with video metadata (from load_video_metadata)
         segment_length: Length of each segment in seconds
         stride: Stride between segments (default: segment_length, i.e., no overlap)
-        soft_threshold: Threshold for determining model assignment (0.0 to 1.0)
         
     Returns:
         DataFrame with segment metadata. audio_label and video_label contain soft labels (0.0-1.0).
@@ -229,9 +227,9 @@ def generate_uniform_segments(
             audio_soft = _proportion_fake(start, end, row.get('audio_fake_segments'))
             video_soft = _proportion_fake(start, end, row.get('visual_fake_segments'))
             
-            # Determine model (use model from original if mostly fake, otherwise None)
-            audio_model = row['audio_model'] if audio_soft >= soft_threshold else None
-            video_model = row['video_model'] if video_soft >= soft_threshold else None
+            # Use model from original video metadata (model assignment handled in post-processing)
+            audio_model = row['audio_model']
+            video_model = row['video_model']
             
             segment_rows.append({
                 'audio_label': audio_soft,  # Store soft label directly (0.0 to 1.0)
@@ -259,8 +257,7 @@ def extract_and_insert_uniform_segments(
     video_root: str, 
     created_at: str, 
     segment_length: float, 
-    stride: Optional[float] = None, 
-    soft_threshold: float = 0.5,
+    stride: Optional[float] = None,
     segment_writer: Optional[NeonSegmentWriter] = None,
     limit: Optional[int] = None
 ) -> int:
@@ -272,7 +269,6 @@ def extract_and_insert_uniform_segments(
         created_at: ISO8601 timestamp for created_at field
         segment_length: Length of each uniform segment in seconds
         stride: Stride between segments (default: segment_length)
-        soft_threshold: Threshold to binarize soft labels (0.0 to 1.0)
         segment_writer: Optional NeonSegmentWriter for Neon writes
         limit: Optional limit on number of segments to process (for testing)
         
@@ -283,8 +279,7 @@ def extract_and_insert_uniform_segments(
     segment_df = generate_uniform_segments(
         metadata_df, 
         segment_length=segment_length, 
-        stride=stride, 
-        soft_threshold=soft_threshold
+        stride=stride
     )
     print(f"🧩 Created {len(segment_df)} candidate segments (uniform segmentation)")
     
@@ -368,8 +363,7 @@ def extract_and_insert_segments(
     limit: Optional[int] = None,
     segmentation_mode: str = "full",
     uniform_segment_length: Optional[float] = None,
-    uniform_stride: Optional[float] = None,
-    soft_threshold: float = 0.5
+    uniform_stride: Optional[float] = None
 ) -> int:
     """
     Extract segments from a video root and insert into DB using provided created_at.
@@ -384,7 +378,6 @@ def extract_and_insert_segments(
         segmentation_mode: "full" (no partials) or "uniform"
         uniform_segment_length: Length of uniform segments (required if mode="uniform")
         uniform_stride: Stride between uniform segments (default: segment_length)
-        soft_threshold: Threshold for binarizing soft labels (default: 0.5)
 
     Returns number of segments inserted.
     """
@@ -396,7 +389,6 @@ def extract_and_insert_segments(
             created_at,
             segment_length=uniform_segment_length,
             stride=uniform_stride,
-            soft_threshold=soft_threshold,
             segment_writer=segment_writer,
             limit=limit
         )
