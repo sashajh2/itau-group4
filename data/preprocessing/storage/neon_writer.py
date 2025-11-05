@@ -1,6 +1,6 @@
 import psycopg2
 from psycopg2.extras import execute_values
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import numpy as np
 
 from utils.config_loader import load_config
@@ -60,8 +60,8 @@ class NeonSegmentWriter:
         duration: float,
         video_label: int,
         audio_label: int,
-        audio_model: str | None,
-        video_model: str | None,
+        audio_model: Optional[str],
+        video_model: Optional[str],
         created_at: str,
     ) -> None:
         rec = (
