@@ -1,4 +1,13 @@
-#Reads videos (e.g., from .tar), extracts segments, and creates metadata entries in your database.
+"""
+Segment extraction for AVDeepfake1M dataset.
+
+This module provides:
+- Metadata loading from JSON files
+- Full segment extraction (metadata-based, no partials)
+- Uniform segment extraction (fixed-length with soft labels)
+- Database insertion (Neon Postgres or SQLite fallback)
+- Debug utilities for testing uniform segmentation
+"""
 from datetime import datetime, timezone
 import os
 import json
@@ -114,7 +123,6 @@ def generate_segment_metadata(video_metadata_df: pd.DataFrame, real_clip_duratio
             real_duration = get_video_duration(row['video_path'])
             if real_duration is None:
                 print(f"⚠️  Skipping video due to duration error: {row['video_path']}")
-                skipped_videos += 1
                 continue  # skip if there's an error loading
             
             num_real_segments = 5
@@ -470,9 +478,20 @@ def insert_segments_to_sqlite_fallback(segment_metadata_df: pd.DataFrame, db_pat
     return successful_inserts
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract segments and insert into SQLite with created_at")
-    parser.add_argument("--video-root", type=str, default="./data/temp_video_extracted/AV1M/extracted/train/lrs3", help="Root folder containing extracted videos")
-    parser.add_argument("--created-at", type=str, default=None, help="ISO8601 timestamp to tag inserted segments")
+    """
+    Legacy CLI entry point for SQLite insertion (metadata-based segmentation only).
+    
+    Note: For production use, prefer av_deepfake_batch_pipeline.py which handles
+    Neon insertion and supports both 'full' and 'uniform' segmentation modes.
+    """
+    parser = argparse.ArgumentParser(
+        description="Extract segments from videos and insert into SQLite (legacy mode). "
+                    "For Neon insertion and uniform segmentation, use av_deepfake_batch_pipeline.py instead."
+    )
+    parser.add_argument("--video-root", type=str, default="./data/temp_video_extracted/AV1M/extracted/train/lrs3", 
+                       help="Root folder containing extracted videos")
+    parser.add_argument("--created-at", type=str, default=None, 
+                       help="ISO8601 timestamp to tag inserted segments")
     args = parser.parse_args()
 
     config = load_config()
@@ -482,17 +501,15 @@ def main():
 
     print("Loading video metadata...")
     metadata_df = load_video_metadata(args.video_root)
-    print("Video metadata loaded:")
-    print(f"Total videos: {len(metadata_df)}")
+    print(f"Video metadata loaded: {len(metadata_df)} videos")
 
-    print("Generating segment metadata...")
+    print("Generating segment metadata (full segments only)...")
     segment_df = generate_segment_metadata(metadata_df)
-    print("Segment metadata generated:")
-    print(f"Total segments: {len(segment_df)}")
+    print(f"Segment metadata generated: {len(segment_df)} segments")
 
-    print(f"Inserting {len(segment_df)} segments into the database with created_at={created_at}...")
-    insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
-    print("Done!")
+    print(f"Inserting {len(segment_df)} segments into SQLite with created_at={created_at}...")
+    num_inserted = insert_segments_to_sqlite_fallback(segment_df, db_path, created_at)
+    print(f"✅ Done! Inserted {num_inserted} segments")
     print(f"CREATED_AT={created_at}")
 
 

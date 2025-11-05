@@ -17,7 +17,6 @@ def main():
     parser.add_argument("--end", type=int, default=50, help="End part (inclusive), e.g., 50 for 050")
     parser.add_argument("--base-dir", type=str, default="./data/temp_video_extracted/AV1M", help="Base local dir for downloads")
     parser.add_argument("--version", type=str, default="2025-09-12", help="Version string")
-    parser.add_argument("--test-limit", type=int, default=None, help="Limit number of segments per part (for testing)")
     parser.add_argument("--segmentation", type=str, choices=["full", "uniform"], default="full", help="Segmentation strategy: 'full' (no partials) or 'uniform'")
     parser.add_argument("--uniform-length", type=float, default=0.32, help="Uniform segment length in seconds (when --segmentation=uniform)")
     parser.add_argument("--uniform-stride", type=float, default=None, help="Stride in seconds for uniform segmentation (default: same as --uniform-length)")
@@ -61,7 +60,7 @@ def main():
                 lrs3_root, 
                 created_at, 
                 segment_writer=segment_writer, 
-                limit=args.test_limit,
+                limit=None,
                 segmentation_mode=args.segmentation,
                 uniform_segment_length=args.uniform_length if args.segmentation == "uniform" else None,
                 uniform_stride=args.uniform_stride if args.segmentation == "uniform" else None,
