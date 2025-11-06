@@ -43,7 +43,7 @@ def generate_for_created_at(
     created_at: str, 
     output_dir: str = "./embeddings/generated", 
     shard_writer: Optional[ShardWriter] = None, 
-    neon_writer: Optional[NeonEmbeddingWriter] = None
+    neon_writer: Optional[NeonEmbeddingWriter] = None,
 ) -> tuple[int, int]:
     """
     Generate embeddings for all segments with the given created_at.
@@ -56,7 +56,7 @@ def generate_for_created_at(
 
     Returns (num_segments, num_embeddings_written)
     """
-    print(f"Getting segments for {created_at}")
+    print(f"🔍 Getting segments for created_at={created_at}")
     segments = get_segments_by_created_at_neon(created_at)
     print(f"Found {len(segments)} segments")
     
@@ -64,27 +64,58 @@ def generate_for_created_at(
         print("❌ No segments found for the specified created_at timestamp")
         return 0, 0
 
-    print("🔄 Generating embeddings for all segments...")
-    accumulator = embed_segments(segments)
-    print("✅ Embedding generation complete")
-
-    attempted = 0
     if shard_writer is None and neon_writer is None:
         raise ValueError("Provide either shard_writer or neon_writer")
     
-    for (mode, model, noise, denoiser_name), data in accumulator.items():
-        embs = data["embeddings"]
-        seg_ids = data["segment_ids"]
-        for seg_id, emb in zip(seg_ids, embs):
-            if neon_writer is not None:
-                neon_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
-            else:
-                shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
-            attempted += 1
-
+    # Process segments in batches to flush incrementally
+    batch_size = 1000  # Process 1000 segments at a time
+    total_attempted = 0
+    total_segments = len(segments)
+    
+    print(f"🔄 Processing {total_segments} segments in batches of {batch_size}...")
+    
+    for batch_start in range(0, total_segments, batch_size):
+        batch_end = min(batch_start + batch_size, total_segments)
+        batch_segments = segments[batch_start:batch_end]
+        batch_num = (batch_start // batch_size) + 1
+        total_batches = (total_segments + batch_size - 1) // batch_size
+        
+        print(f"\n📦 Batch {batch_num}/{total_batches}: Processing segments {batch_start+1}-{batch_end} ({len(batch_segments)} segments)")
+        
+        # Generate embeddings for this batch
+        print(f"  🔄 Generating embeddings...")
+        accumulator = embed_segments(batch_segments)
+        print(f"  ✅ Generated embeddings for batch {batch_num}")
+        
+        # Write embeddings to Neon immediately
+        batch_attempted = 0
+        for (mode, model, noise, denoiser_name), data in accumulator.items():
+            embs = data["embeddings"]
+            seg_ids = data["segment_ids"]
+            for seg_id, emb in zip(seg_ids, embs):
+                if neon_writer is not None:
+                    neon_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
+                else:
+                    shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
+                batch_attempted += 1
+                total_attempted += 1
+        
+        # Flush immediately after each batch
+        if neon_writer is not None:
+            print(f"  💾 Flushing {batch_attempted} embeddings from batch {batch_num} to Neon...")
+            try:
+                neon_writer.flush_all()
+                print(f"  ✅ Successfully flushed batch {batch_num} to Neon")
+            except Exception as e:
+                print(f"  ❌ ERROR flushing batch {batch_num}: {e}")
+                raise
+        print(f"  ✅ Batch {batch_num} complete ({batch_attempted} embeddings written)")
+    
+    print(f"\n✅ All batches complete! Total: {total_segments} segments, {total_attempted} embeddings")
+    
     # Note: Don't flush/close neon_writer here - let the caller manage it
     # This allows batch_pipeline to flush at appropriate times
-    return len(segments), attempted
+    return total_segments, total_attempted
 
 
 def main():

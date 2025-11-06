@@ -43,12 +43,35 @@ class NeonSegmentWriter:
 
     def __init__(self, batch_size: int = 1000):
         cfg = load_config()
-        dsn = cfg["database"]["postgres"]["neon_database_url"]
-        self.conn = psycopg2.connect(dsn)
-        self.conn.autocommit = False
-        self.cur = self.conn.cursor()
+        self.dsn = cfg["database"]["postgres"]["neon_database_url"]
         self.batch_size = batch_size
         self.buffer: List[tuple] = []
+        self._connect()
+    
+    def _connect(self):
+        """Create a new database connection."""
+        self.conn = psycopg2.connect(self.dsn)
+        self.conn.autocommit = False
+        self.cur = self.conn.cursor()
+    
+    def _reconnect(self):
+        """Reconnect to the database after a connection error."""
+        try:
+            if hasattr(self, 'cur') and self.cur:
+                try:
+                    self.cur.close()
+                except Exception:
+                    pass
+            if hasattr(self, 'conn') and self.conn:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        print("  🔄 Reconnecting to Neon...")
+        self._connect()
+        print("  ✅ Reconnected successfully")
 
     def add(
         self,
@@ -81,23 +104,35 @@ class NeonSegmentWriter:
         if len(self.buffer) >= self.batch_size:
             self._flush()
 
-    def _flush(self):
+    def _flush(self, retry: bool = True):
         if not self.buffer:
             return
-        execute_values(
-            self.cur,
-            """
-            INSERT INTO segments(
-              segment_id, source, video_id, video_path, start_time, duration,
-              video_label, audio_label, audio_model, video_model, created_at
-            ) VALUES %s
-            ON CONFLICT (segment_id) DO NOTHING
-            """,
-            self.buffer,
-            page_size=len(self.buffer),
-        )
-        self.conn.commit()
-        self.buffer.clear()
+        num_to_flush = len(self.buffer)
+        try:
+            execute_values(
+                self.cur,
+                """
+                INSERT INTO segments(
+                  segment_id, source, video_id, video_path, start_time, duration,
+                  video_label, audio_label, audio_model, video_model, created_at
+                ) VALUES %s
+                ON CONFLICT (segment_id) DO NOTHING
+                """,
+                self.buffer,
+                page_size=len(self.buffer),
+            )
+            self.conn.commit()
+            self.buffer.clear()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            error_str = str(e).lower()
+            if retry and ("connection" in error_str or "ssl" in error_str or "cursor" in error_str or "closed" in error_str):
+                print(f"  ↳ Connection error flushing {num_to_flush} segments: {e}")
+                print(f"  ↳ Retrying with reconnection...")
+                self._reconnect()
+                # Retry once after reconnection (buffer is preserved)
+                return self._flush(retry=False)
+            else:
+                raise
 
     def flush_all(self):
         self._flush()
@@ -127,10 +162,7 @@ class NeonEmbeddingWriter:
 
     def __init__(self, version: str, batch_size: int = 1000):
         cfg = load_config()
-        dsn = cfg["database"]["postgres"]["neon_database_url"]
-        self.conn = psycopg2.connect(dsn)
-        self.conn.autocommit = False
-        self.cur = self.conn.cursor()
+        self.dsn = cfg["database"]["postgres"]["neon_database_url"]
         self.version = version
         self.batch_size = batch_size
         # buffers keyed by target table
@@ -139,6 +171,32 @@ class NeonEmbeddingWriter:
             "embeddings_audio_openl3": [],
             "embeddings_video_senet": [],
         }
+        self._connect()
+    
+    def _connect(self):
+        """Create a new database connection."""
+        self.conn = psycopg2.connect(self.dsn)
+        self.conn.autocommit = False
+        self.cur = self.conn.cursor()
+    
+    def _reconnect(self):
+        """Reconnect to the database after a connection error."""
+        try:
+            if hasattr(self, 'cur') and self.cur:
+                try:
+                    self.cur.close()
+                except Exception:
+                    pass
+            if hasattr(self, 'conn') and self.conn:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        print("  🔄 Reconnecting to Neon...")
+        self._connect()
+        print("  ✅ Reconnected successfully")
 
     def add(self, model_name: str, mode: str, noise: str, denoiser_name: str, segment_id: str, emb) -> None:
         table = _route_table(mode, model_name, len(emb))
@@ -164,28 +222,49 @@ class NeonEmbeddingWriter:
             vec_literal,
         )
         self.buffers[table].append(rec)
-        if len(self.buffers[table]) >= self.batch_size:
+        buffer_size = len(self.buffers[table])
+        if buffer_size >= self.batch_size:
+            print(f"  ↳ Auto-flush triggered: {buffer_size} embeddings in {table} buffer (batch_size={self.batch_size})")
             self._flush(table)
 
-    def _flush(self, table: str):
+    def _flush(self, table: str, retry: bool = True):
         buf = self.buffers.get(table) or []
         if not buf:
             return
+        num_to_flush = len(buf)
         tpl = "(" + ",".join(["%s"] * 12) + ",%s::vector)"
-        execute_values(
-            self.cur,
-            f"""
-            INSERT INTO {table}(
-              embedding_id, segment_id, model_name, mode, noise, denoiser_name,
-              dtype, embedding_type, reducer_id, contraster_id, version, created_at, embedding
-            ) VALUES %s
-            ON CONFLICT (embedding_id) DO NOTHING
-            """,
-            buf,
-            template=tpl,
-            page_size=len(buf),
-        )
-        self.conn.commit()
+        
+        try:
+            execute_values(
+                self.cur,
+                f"""
+                INSERT INTO {table}(
+                  embedding_id, segment_id, model_name, mode, noise, denoiser_name,
+                  dtype, embedding_type, reducer_id, contraster_id, version, created_at, embedding
+                ) VALUES %s
+                ON CONFLICT (embedding_id) DO NOTHING
+                """,
+                buf,
+                template=tpl,
+                page_size=len(buf),
+            )
+            self.conn.commit()
+            print(f"  ↳ Flushed {num_to_flush} embeddings to {table}")
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            error_str = str(e).lower()
+            if retry and ("connection" in error_str or "ssl" in error_str or "cursor" in error_str or "closed" in error_str):
+                print(f"  ↳ Connection error flushing {num_to_flush} embeddings to {table}: {e}")
+                print(f"  ↳ Retrying with reconnection...")
+                self._reconnect()
+                # Retry once after reconnection
+                return self._flush(table, retry=False)
+            else:
+                print(f"  ↳ ERROR flushing {num_to_flush} embeddings to {table}: {e}")
+                raise
+        except Exception as e:
+            print(f"  ↳ ERROR flushing {num_to_flush} embeddings to {table}: {e}")
+            raise
+        
         buf.clear()
 
     def flush_all(self):
