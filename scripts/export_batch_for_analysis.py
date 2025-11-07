@@ -6,17 +6,19 @@ This script:
 1. Retrieves all segments from a given created_at batch
 2. Joins with embedding tables (hubert, openl3, senet)
 3. Creates a long-format DataFrame with segment_idx for alignment
-4. Saves as parquet and optional .npz files
+4. Saves as CSV (metadata only) and .npz files (embeddings + metadata)
 
 Usage:
     python scripts/export_batch_for_analysis.py
 """
 
 import os
+import warnings
 import numpy as np
 import pandas as pd
 import psycopg2
 from typing import List
+from tqdm import tqdm
 
 from utils.config_loader import load_config
 
@@ -70,10 +72,18 @@ def fetch_segments_with_embeddings(
         ORDER BY s.video_id, s.video_path, s.start_time
     """.format(table=embedding_table)
     
-    df = pd.read_sql_query(query, conn, params=(created_at,))
+    # Use psycopg2 connection directly (pandas warns but it works fine)
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=UserWarning, message='.*pandas only supports SQLAlchemy.*')
+        df = pd.read_sql_query(query, conn, params=(created_at,))
     
     # Convert embedding from list to numpy array
-    df['embedding'] = df['embedding'].apply(lambda x: np.array(x, dtype=np.float32))
+    # Use tqdm for progress if there are many rows
+    if len(df) > 1000:
+        tqdm.pandas()
+        df['embedding'] = df['embedding'].progress_apply(lambda x: np.array(x, dtype=np.float32))
+    else:
+        df['embedding'] = df['embedding'].apply(lambda x: np.array(x, dtype=np.float32))
     
     return df
 
@@ -108,7 +118,7 @@ def main():
         # Fetch data for each embedding model
         all_dfs: List[pd.DataFrame] = []
         
-        for model_name, table_name in EMBEDDING_TABLES.items():
+        for model_name, table_name in tqdm(EMBEDDING_TABLES.items(), desc="Fetching embeddings"):
             print(f"\n📥 Fetching {model_name} embeddings from {table_name}...")
             
             try:
@@ -149,15 +159,24 @@ def main():
         df_all = pd.concat(all_dfs, ignore_index=True)
         print(f"✅ Total rows: {len(df_all)}")
         
-        # Save combined parquet file
-        parquet_path = os.path.join(OUTPUT_DIR, f"all_models_batch_{safe_ts}.parquet")
-        print(f"\n💾 Saving combined DataFrame to {parquet_path}...")
-        df_all.to_parquet(parquet_path, index=False)
-        print(f"✅ Saved {len(df_all)} rows to parquet")
+        # Save combined CSV file (metadata only, no embeddings)
+        # CSV: Native pandas format, no dependencies required
+        # - Easy to inspect, filter, and join in Excel/pandas
+        # - Embeddings excluded (too large, use NPZ files instead)
+        csv_path = os.path.join(OUTPUT_DIR, f"all_models_batch_{safe_ts}_metadata.csv")
+        print(f"\n💾 Saving metadata (without embeddings) to {csv_path}...")
+        df_metadata = df_all.drop(columns=['embedding'])  # Remove embeddings column
+        df_metadata.to_csv(csv_path, index=False)
+        print(f"✅ Saved {len(df_metadata)} rows to CSV")
         
         # Save individual .npz files per model
+        # NPZ: NumPy's native compressed format
+        # - Embeddings pre-stacked into 2D arrays (N x D) for fast access
+        # - All metadata as separate arrays, easy to index together
+        # - Best for NumPy-based ML workflows (PCA, UMAP, clustering, distance calculations)
+        # - More memory-efficient when loading all embeddings at once
         print(f"\n💾 Saving individual .npz files per model...")
-        for model_name in EMBEDDING_TABLES.keys():
+        for model_name in tqdm(EMBEDDING_TABLES.keys(), desc="Saving .npz files"):
             df_model = df_all[df_all['embedding_model'] == model_name]
             
             if len(df_model) == 0:
@@ -165,6 +184,7 @@ def main():
                 continue
             
             # Stack embeddings into numpy array
+            # This converts list of arrays into a single 2D array (N x D)
             embeddings = np.stack(df_model['embedding'].to_numpy(), axis=0)
             
             npz_path = os.path.join(OUTPUT_DIR, f"{model_name}_batch_{safe_ts}.npz")
