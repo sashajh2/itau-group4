@@ -489,7 +489,7 @@ class DeepfakeEmbeddingAnalyzer:
                 float(np.mean(real_to_source_similarities) - np.mean(fake_to_source_similarities))
                 if real_to_source_similarities and fake_to_source_similarities else None
             ),
-            'overall_linear_separability': linear_separability,
+            'overall_linear_separability': linear_separability,  # Cross-validated accuracy (0-1)
             'num_videos_analyzed': videos_analyzed
         }
         
