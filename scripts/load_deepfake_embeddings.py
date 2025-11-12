@@ -120,13 +120,69 @@ def get_all_video_ids(conn: psycopg2.extensions.connection, created_at_filter: s
         return [row[0] for row in cur.fetchall()]
 
 
+def analyze_video_id_distribution(conn: psycopg2.extensions.connection, created_at_filter: str):
+    """
+    Analyze video_id distribution across created_at batches to explain discrepancies.
+    
+    Returns:
+        Dictionary with statistics about video_id distribution
+    """
+    with conn.cursor() as cur:
+        # Count total videos per created_at
+        cur.execute("""
+            SELECT 
+                created_at,
+                COUNT(DISTINCT video_id) as num_videos
+            FROM segments
+            WHERE created_at >= %s
+            GROUP BY created_at
+            ORDER BY created_at
+        """, (created_at_filter,))
+        per_batch = {row[0]: row[1] for row in cur.fetchall()}
+        
+        # Count unique video_ids overall
+        cur.execute("""
+            SELECT COUNT(DISTINCT video_id)
+            FROM segments
+            WHERE created_at >= %s
+        """, (created_at_filter,))
+        unique_total = cur.fetchone()[0]
+        
+        # Find video_ids that appear in multiple batches
+        cur.execute("""
+            SELECT 
+                video_id,
+                COUNT(DISTINCT created_at) as num_batches
+            FROM segments
+            WHERE created_at >= %s
+            GROUP BY video_id
+            HAVING COUNT(DISTINCT created_at) > 1
+            ORDER BY num_batches DESC, video_id
+        """, (created_at_filter,))
+        duplicates = cur.fetchall()
+        
+        return {
+            "per_batch": per_batch,
+            "unique_total": unique_total,
+            "sum_per_batch": sum(per_batch.values()),
+            "duplicates": duplicates,
+        }
+
+
 def fetch_video_data(
     conn: psycopg2.extensions.connection,
     video_id: str,
     created_at_filter: str,
+    deduplicate: bool = True,
 ) -> List[Dict]:
     """
     Fetch all segments and embeddings for a given video_id.
+    
+    Args:
+        conn: Database connection
+        video_id: The video_id to fetch
+        created_at_filter: Filter for created_at
+        deduplicate: If True, deduplicate by segment_id (keep first occurrence)
     
     Returns:
         List of dictionaries with segment data and embeddings
@@ -139,6 +195,7 @@ def fetch_video_data(
             s.audio_label,
             s.video_label,
             s.duration,
+            s.created_at,
             e1.embedding::float4[] AS openl3_embedding,
             e2.embedding::float4[] AS hubert_embedding,
             e3.embedding::float4[] AS senet_embedding
@@ -148,7 +205,7 @@ def fetch_video_data(
         LEFT JOIN embeddings_video_senet e3 ON s.segment_id = e3.segment_id
         WHERE s.video_id = %s
           AND s.created_at >= %s
-        ORDER BY s.video_path, s.start_time
+        ORDER BY s.created_at, s.video_path, s.start_time
     """
     
     with conn.cursor() as cur:
@@ -157,19 +214,72 @@ def fetch_video_data(
         rows = cur.fetchall()
         
         results = []
+        seen_segment_ids = set()
+        duplicates_skipped = 0
+        
         for row in rows:
             row_dict = dict(zip(columns, row))
+            segment_id = row_dict["segment_id"]
+            
+            # Deduplicate by segment_id if requested
+            if deduplicate:
+                if segment_id in seen_segment_ids:
+                    duplicates_skipped += 1
+                    continue
+                seen_segment_ids.add(segment_id)
+            
             # Convert embedding lists to numpy arrays
             for emb_type in ["openl3_embedding", "hubert_embedding", "senet_embedding"]:
                 if row_dict[emb_type] is not None:
                     row_dict[emb_type] = np.array(row_dict[emb_type], dtype=np.float32)
             results.append(row_dict)
         
+        if duplicates_skipped > 0:
+            print(f"  ⚠️  {video_id}: Skipped {duplicates_skipped} duplicate segment_ids")
+        
         return results
 
 
+def check_video_completeness(raw_data: List[Dict]) -> Tuple[bool, Dict[str, int]]:
+    """
+    Check if a video has complete embeddings (all 3 types for all segments).
+    
+    Args:
+        raw_data: List of segment dictionaries
+        
+    Returns:
+        Tuple of (is_complete, stats_dict) where stats_dict contains counts
+    """
+    if not raw_data:
+        return False, {"total_segments": 0, "openl3": 0, "hubert": 0, "senet": 0}
+    
+    stats = {
+        "total_segments": len(raw_data),
+        "openl3": 0,
+        "hubert": 0,
+        "senet": 0,
+    }
+    
+    for segment in raw_data:
+        if segment.get("openl3_embedding") is not None:
+            stats["openl3"] += 1
+        if segment.get("hubert_embedding") is not None:
+            stats["hubert"] += 1
+        if segment.get("senet_embedding") is not None:
+            stats["senet"] += 1
+    
+    # Complete if all segments have all 3 embedding types
+    is_complete = (
+        stats["openl3"] == stats["total_segments"]
+        and stats["hubert"] == stats["total_segments"]
+        and stats["senet"] == stats["total_segments"]
+    )
+    
+    return is_complete, stats
+
+
 def process_video_data(
-    video_id: str, raw_data: List[Dict]
+    video_id: str, raw_data: List[Dict], require_complete: bool = False
 ) -> Optional[Dict]:
     """
     Process raw segment data into hierarchical structure for one video.
@@ -177,12 +287,19 @@ def process_video_data(
     Args:
         video_id: The video_id
         raw_data: List of segment dictionaries from fetch_video_data
+        require_complete: If True, skip videos without all embeddings
         
     Returns:
-        Dictionary with processed video data, or None if invalid
+        Dictionary with processed video data, or None if invalid/incomplete
     """
     if not raw_data:
         return None
+    
+    # Check completeness if required
+    if require_complete:
+        is_complete, stats = check_video_completeness(raw_data)
+        if not is_complete:
+            return None
     
     # Group segments by video_path (each path is one augmentation)
     by_path: Dict[str, List[Dict]] = defaultdict(list)
@@ -534,7 +651,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="deepfake_embeddings.h5",
+        default="exports/deepfake_embeddings.h5",
         help="Output HDF5 filename (default: deepfake_embeddings.h5)",
     )
     parser.add_argument(
@@ -542,11 +659,29 @@ def main():
         action="store_true",
         help="Test queries without loading all data (just count videos)",
     )
+    parser.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Only load videos with all 3 embedding types complete (skip incomplete batches)",
+    )
+    parser.add_argument(
+        "--no-deduplicate",
+        action="store_true",
+        help="Don't deduplicate by segment_id (include all batches even if segments overlap)",
+    )
     args = parser.parse_args()
     
     print(f"📊 Loading deepfake embeddings from Neon")
     print(f"   Filter: created_at >= {args.created_at_filter}")
     print(f"   Output: {args.output}")
+    if args.require_complete:
+        print(f"   Mode: Only loading videos with complete embeddings (all 3 types)")
+    else:
+        print(f"   Mode: Loading all videos (including incomplete embeddings)")
+    if args.no_deduplicate:
+        print(f"   Deduplication: DISABLED (will include all batches, even if segments overlap)")
+    else:
+        print(f"   Deduplication: ENABLED (will deduplicate by segment_id, keeping first occurrence)")
     
     # Connect to database
     print(f"\n🔗 Connecting to Neon...")
@@ -559,23 +694,78 @@ def main():
         print(f"   Found {len(video_ids)} unique video_ids")
         
         if args.dry_run:
-            print(f"\n✅ Dry run complete. Would process {len(video_ids)} videos.")
+            # Analyze distribution to explain any discrepancies
+            print(f"\n📊 Analyzing video_id distribution...")
+            analysis = analyze_video_id_distribution(conn, args.created_at_filter)
+            
+            print(f"\n   Per-batch counts:")
+            for created_at, count in sorted(analysis["per_batch"].items()):
+                print(f"     {created_at}: {count} videos")
+            
+            print(f"\n   Summary:")
+            print(f"     Sum of per-batch counts: {analysis['sum_per_batch']}")
+            print(f"     Unique video_ids: {analysis['unique_total']}")
+            if analysis['sum_per_batch'] != analysis['unique_total']:
+                diff = analysis['sum_per_batch'] - analysis['unique_total']
+                print(f"     Difference: {diff} (same video_id in multiple batches)")
+                if analysis['duplicates']:
+                    print(f"\n   Videos appearing in multiple batches:")
+                    for vid_id, num_batches in analysis['duplicates'][:5]:
+                        print(f"     {vid_id}: appears in {num_batches} batches")
+                    if len(analysis['duplicates']) > 5:
+                        print(f"     ... and {len(analysis['duplicates']) - 5} more")
+            
+            print(f"\n✅ Dry run complete. Would process {len(video_ids)} unique videos.")
             return
         
         # Process each video
         print(f"\n🔄 Processing {len(video_ids)} videos...")
         videos_data = {}
         total_segments = 0
+        incomplete_videos = []
+        complete_count = 0
+        incomplete_count = 0
         
         for video_id in tqdm(video_ids, desc="Processing videos"):
-            raw_data = fetch_video_data(conn, video_id, args.created_at_filter)
-            processed = process_video_data(video_id, raw_data)
+            raw_data = fetch_video_data(
+                conn, 
+                video_id, 
+                args.created_at_filter,
+                deduplicate=not args.no_deduplicate
+            )
+            
+            # Check completeness for statistics
+            is_complete, stats = check_video_completeness(raw_data)
+            if is_complete:
+                complete_count += 1
+            else:
+                incomplete_count += 1
+                if not args.require_complete:
+                    incomplete_videos.append((video_id, stats))
+            
+            processed = process_video_data(video_id, raw_data, require_complete=args.require_complete)
             
             if processed is not None:
                 videos_data[video_id] = processed
                 total_segments += processed["num_segments"]
         
-        print(f"\n✅ Loaded {len(videos_data)} videos with {total_segments} total segments")
+        print(f"\n📊 Processing Summary:")
+        print(f"   Complete videos: {complete_count}")
+        print(f"   Incomplete videos: {incomplete_count}")
+        if args.require_complete:
+            print(f"   Loaded: {len(videos_data)} videos (only complete ones)")
+        else:
+            print(f"   Loaded: {len(videos_data)} videos (including incomplete)")
+        print(f"   Total segments: {total_segments}")
+        
+        if incomplete_videos and not args.require_complete:
+            print(f"\n⚠️  Incomplete videos (missing some embeddings):")
+            for vid_id, stats in incomplete_videos[:10]:  # Show first 10
+                print(f"   {vid_id}: {stats['openl3']}/{stats['total_segments']} openl3, "
+                      f"{stats['hubert']}/{stats['total_segments']} hubert, "
+                      f"{stats['senet']}/{stats['total_segments']} senet")
+            if len(incomplete_videos) > 10:
+                print(f"   ... and {len(incomplete_videos) - 10} more")
         
         # Build final data structure
         data = {
