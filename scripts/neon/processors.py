@@ -12,7 +12,6 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from .validation import check_video_completeness
-from .queries import identify_source_video, classify_augmentation_type
 
 
 def identify_source_video(video_paths: List[str]) -> int:
