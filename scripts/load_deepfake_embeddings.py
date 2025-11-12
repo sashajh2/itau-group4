@@ -3,13 +3,19 @@
 Load deepfake embedding data from Neon PostgreSQL and save as HDF5.
 
 This script:
-1. Queries segments and embeddings from Neon Postgres (created_at >= filter)
+1. Queries segments and embeddings from Neon Postgres
+   - AVDeepfake1M: filtered by created_at >= filter (default: '2025-11-01 00:00:00')
+   - ShareVeo3: filtered by source = 'ShareVeo3' (optional, use --include-shareveo3)
 2. Groups data hierarchically by video_id and augmentations
 3. Identifies source videos and classifies augmentation types
 4. Saves structured data as HDF5 for efficient storage and partial loading
 
 Usage:
-    python scripts/load_deepfake_embeddings.py [--created-at-filter '2025-11-01 00:00:00'] [--output deepfake_embeddings.h5] [--dry-run]
+    # Load only AVDeepfake1M
+    python scripts/load_deepfake_embeddings.py --created-at-filter '2025-11-01 00:00:00'
+    
+    # Load both AVDeepfake1M and ShareVeo3
+    python scripts/load_deepfake_embeddings.py --created-at-filter '2025-11-01 00:00:00' --include-shareveo3
 """
 
 import argparse
@@ -108,15 +114,42 @@ def classify_augmentation_type(
         return "real"
 
 
-def get_all_video_ids(conn: psycopg2.extensions.connection, created_at_filter: str) -> List[str]:
-    """Get all unique video_ids with created_at filter."""
+def get_all_video_ids(
+    conn: psycopg2.extensions.connection, 
+    created_at_filter: Optional[str] = None,
+    source: Optional[str] = None
+) -> List[str]:
+    """
+    Get all unique video_ids with optional filters.
+    
+    Args:
+        conn: Database connection
+        created_at_filter: Optional filter by created_at >= this date
+        source: Optional filter by source (e.g., 'ShareVeo3')
+    
+    Returns:
+        List of unique video_ids
+    """
+    where_clauses = []
+    params = []
+    
+    if created_at_filter:
+        where_clauses.append("created_at >= %s")
+        params.append(created_at_filter)
+    
+    if source:
+        where_clauses.append("source = %s")
+        params.append(source)
+    
+    where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT DISTINCT video_id
             FROM segments
-            WHERE created_at >= %s
+            {where_sql}
             ORDER BY video_id
-        """, (created_at_filter,))
+        """, tuple(params) if params else None)
         return [row[0] for row in cur.fetchall()]
 
 
@@ -172,7 +205,8 @@ def analyze_video_id_distribution(conn: psycopg2.extensions.connection, created_
 def fetch_video_data(
     conn: psycopg2.extensions.connection,
     video_id: str,
-    created_at_filter: str,
+    created_at_filter: Optional[str] = None,
+    source: Optional[str] = None,
     deduplicate: bool = True,
 ) -> List[Dict]:
     """
@@ -181,13 +215,27 @@ def fetch_video_data(
     Args:
         conn: Database connection
         video_id: The video_id to fetch
-        created_at_filter: Filter for created_at
+        created_at_filter: Optional filter for created_at >= this date
+        source: Optional filter by source (e.g., 'ShareVeo3')
         deduplicate: If True, deduplicate by segment_id (keep first occurrence)
     
     Returns:
         List of dictionaries with segment data and embeddings
     """
-    query = """
+    where_clauses = ["s.video_id = %s"]
+    params = [video_id]
+    
+    if created_at_filter:
+        where_clauses.append("s.created_at >= %s")
+        params.append(created_at_filter)
+    
+    if source:
+        where_clauses.append("s.source = %s")
+        params.append(source)
+    
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+    
+    query = f"""
         SELECT 
             s.segment_id,
             s.video_path,
@@ -196,6 +244,7 @@ def fetch_video_data(
             s.video_label,
             s.duration,
             s.created_at,
+            s.source,
             e1.embedding::float4[] AS openl3_embedding,
             e2.embedding::float4[] AS hubert_embedding,
             e3.embedding::float4[] AS senet_embedding
@@ -203,13 +252,12 @@ def fetch_video_data(
         LEFT JOIN embeddings_audio_openl3 e1 ON s.segment_id = e1.segment_id
         LEFT JOIN embeddings_audio_hubert e2 ON s.segment_id = e2.segment_id
         LEFT JOIN embeddings_video_senet e3 ON s.segment_id = e3.segment_id
-        WHERE s.video_id = %s
-          AND s.created_at >= %s
+        {where_sql}
         ORDER BY s.created_at, s.video_path, s.start_time
     """
     
     with conn.cursor() as cur:
-        cur.execute(query, (video_id, created_at_filter))
+        cur.execute(query, tuple(params))
         columns = [desc[0] for desc in cur.description]
         rows = cur.fetchall()
         
@@ -279,7 +327,7 @@ def check_video_completeness(raw_data: List[Dict]) -> Tuple[bool, Dict[str, int]
 
 
 def process_video_data(
-    video_id: str, raw_data: List[Dict], require_complete: bool = False
+    video_id: str, raw_data: List[Dict], require_complete: bool = False, dataset: str = "avdeepfake1m"
 ) -> Optional[Dict]:
     """
     Process raw segment data into hierarchical structure for one video.
@@ -288,6 +336,7 @@ def process_video_data(
         video_id: The video_id
         raw_data: List of segment dictionaries from fetch_video_data
         require_complete: If True, skip videos without all embeddings
+        dataset: Dataset name ('avdeepfake1m' or 'shareveo3')
         
     Returns:
         Dictionary with processed video data, or None if invalid/incomplete
@@ -301,6 +350,14 @@ def process_video_data(
         if not is_complete:
             return None
     
+    # Detect dataset from source field if not provided
+    if dataset is None:
+        sources = set(seg.get("source") for seg in raw_data if seg.get("source"))
+        if "ShareVeo3" in sources:
+            dataset = "shareveo3"
+        else:
+            dataset = "avdeepfake1m"
+    
     # Group segments by video_path (each path is one augmentation)
     by_path: Dict[str, List[Dict]] = defaultdict(list)
     for segment in raw_data:
@@ -308,6 +365,10 @@ def process_video_data(
     
     video_paths = sorted(by_path.keys())
     num_augmentations = len(video_paths)
+    
+    # ShareVeo3 should have exactly 1 augmentation
+    if dataset == "shareveo3" and num_augmentations != 1:
+        print(f"  ⚠️  Warning: ShareVeo3 video {video_id} has {num_augmentations} augmentations (expected 1)")
     
     # Check that all augmentations have the same number of segments
     segment_counts = [len(by_path[path]) for path in video_paths]
@@ -322,8 +383,12 @@ def process_video_data(
         print(f"  ⚠️  Warning: {video_id} has no segments, skipping")
         return None
     
-    # Identify source video
-    source_idx = identify_source_video(video_paths)
+    # Identify source video (only for AVDeepfake1M)
+    if dataset == "avdeepfake1m":
+        source_idx = identify_source_video(video_paths)
+    else:
+        # ShareVeo3: source is the single video itself
+        source_idx = 0
     
     # Detect embedding dimensions from first segment with embeddings
     emb_dims = {"openl3": None, "hubert": None, "senet": None}
@@ -390,19 +455,36 @@ def process_video_data(
                 segment_ids.append(segment["segment_id"])
         
         # Classify augmentation type
-        aug_type = classify_augmentation_type(
-            video_path, source_idx, aug_idx, labels["audio"][aug_idx, :]
-        )
+        if dataset == "shareveo3":
+            # ShareVeo3 is always fully synthetic (fake)
+            aug_type = "fake"
+        else:
+            aug_type = classify_augmentation_type(
+                video_path, source_idx, aug_idx, labels["audio"][aug_idx, :]
+            )
         augmentation_types.append(aug_type)
     
     # Count real/fake augmentations
-    num_real = sum(1 for t in augmentation_types if t == "real")
-    num_fake = sum(1 for t in augmentation_types if t == "fake")
+    # For ShareVeo3, source is counted as fake (it's synthetic)
+    if dataset == "shareveo3":
+        num_real = 0
+        num_fake = 1
+    else:
+        num_real = sum(1 for t in augmentation_types if t in ["source", "real"])
+        num_fake = sum(1 for t in augmentation_types if t == "fake")
     
     # Calculate total duration (from first augmentation)
     total_duration = sum(seg.get("duration", 0.0) for seg in by_path[video_paths[0]][:num_segments])
     
+    # Get created_at (for AVDeepfake1M)
+    created_at_val = None
+    if dataset == "avdeepfake1m" and raw_data:
+        created_at_val = raw_data[0].get("created_at")
+        if created_at_val is not None:
+            created_at_val = str(created_at_val)
+    
     return {
+        "dataset": dataset,
         "num_segments": num_segments,
         "num_augmentations": num_augmentations,
         "num_real_augmentations": num_real,
@@ -416,6 +498,7 @@ def process_video_data(
         "embeddings": embeddings,
         "labels": labels,
         "segment_ids": segment_ids,
+        "created_at": created_at_val,
     }
 
 
@@ -460,9 +543,17 @@ def save_to_hdf5(data: Dict, filename: str = "deepfake_embeddings.h5"):
     with h5py.File(filename, "w") as f:
         # Save metadata
         meta_grp = f.create_group("metadata")
-        meta_grp.attrs["created_at_filter"] = data["metadata"]["created_at_filter"]
+        if "datasets" in data["metadata"]:
+            meta_grp.create_dataset(
+                "datasets",
+                data=np.array([s.encode() for s in data["metadata"]["datasets"]]),
+            )
+        if "avdeepfake1m_filter" in data["metadata"]:
+            meta_grp.attrs["avdeepfake1m_filter"] = data["metadata"]["avdeepfake1m_filter"]
+        if "created_at_filter" in data["metadata"]:
+            meta_grp.attrs["created_at_filter"] = data["metadata"]["created_at_filter"]
         meta_grp.attrs["total_videos"] = data["metadata"]["total_videos"]
-        meta_grp.attrs["total_segments"] = data["metadata"]["total_segments"]
+        meta_grp.attrs["total_segments"] = data["metadata"].get("total_segments", data["metadata"].get("total_embeddings", 0))
         meta_grp.attrs["date_created"] = str(data["metadata"]["date_created"])
         meta_grp.create_dataset(
             "embedding_types",
@@ -484,11 +575,14 @@ def save_to_hdf5(data: Dict, filename: str = "deepfake_embeddings.h5"):
             vid_grp.attrs["original_video_id"] = video_id  # Store original
             
             # Metadata
+            vid_grp.attrs["dataset"] = video_data.get("dataset", "avdeepfake1m")
             vid_grp.attrs["num_segments"] = video_data["num_segments"]
             vid_grp.attrs["num_augmentations"] = video_data["num_augmentations"]
             vid_grp.attrs["num_real_augmentations"] = video_data["num_real_augmentations"]
             vid_grp.attrs["num_fake_augmentations"] = video_data["num_fake_augmentations"]
             vid_grp.attrs["duration"] = video_data["duration"]
+            if video_data.get("created_at") is not None:
+                vid_grp.attrs["created_at"] = video_data["created_at"]
             
             # Augmentation info
             aug_grp = vid_grp.create_group("augmentation_info")
@@ -555,18 +649,26 @@ def load_from_hdf5(
     with h5py.File(filename, "r") as f:
         # Load metadata
         meta_grp = f["metadata"]
-        data["metadata"] = {
-            "created_at_filter": meta_grp.attrs["created_at_filter"].decode()
-            if isinstance(meta_grp.attrs["created_at_filter"], bytes)
-            else meta_grp.attrs["created_at_filter"],
+        metadata_dict = {
             "total_videos": meta_grp.attrs["total_videos"],
-            "total_segments": meta_grp.attrs["total_segments"],
+            "total_segments": meta_grp.attrs.get("total_segments", 0),
             "date_created": meta_grp.attrs["date_created"].decode()
             if isinstance(meta_grp.attrs["date_created"], bytes)
             else meta_grp.attrs["date_created"],
             "embedding_types": [s.decode() for s in meta_grp["embedding_types"][:]],
             "video_ids": [s.decode() for s in meta_grp["video_ids"][:]],
         }
+        
+        # Handle optional fields
+        if "datasets" in meta_grp:
+            metadata_dict["datasets"] = [s.decode() for s in meta_grp["datasets"][:]]
+        if "avdeepfake1m_filter" in meta_grp.attrs:
+            metadata_dict["avdeepfake1m_filter"] = meta_grp.attrs["avdeepfake1m_filter"]
+        if "created_at_filter" in meta_grp.attrs:
+            val = meta_grp.attrs["created_at_filter"]
+            metadata_dict["created_at_filter"] = val.decode() if isinstance(val, bytes) else val
+        
+        data["metadata"] = metadata_dict
         
         # Filter video_ids if specified
         if video_ids is not None:
@@ -584,7 +686,7 @@ def load_from_hdf5(
             
             vid_grp = videos_grp[safe_video_id]
             
-            data["videos"][video_id] = {
+            video_dict = {
                 "num_segments": vid_grp.attrs["num_segments"],
                 "num_augmentations": vid_grp.attrs["num_augmentations"],
                 "num_real_augmentations": vid_grp.attrs["num_real_augmentations"],
@@ -612,6 +714,15 @@ def load_from_hdf5(
                     s.decode() for s in vid_grp["segment_ids"][:]
                 ],
             }
+            
+            # Handle optional fields
+            if "dataset" in vid_grp.attrs:
+                video_dict["dataset"] = vid_grp.attrs["dataset"].decode() if isinstance(vid_grp.attrs["dataset"], bytes) else vid_grp.attrs["dataset"]
+            if "created_at" in vid_grp.attrs:
+                val = vid_grp.attrs["created_at"]
+                video_dict["created_at"] = val.decode() if isinstance(val, bytes) else val
+            
+            data["videos"][video_id] = video_dict
     
     return data
 
@@ -669,10 +780,17 @@ def main():
         action="store_true",
         help="Don't deduplicate by segment_id (include all batches even if segments overlap)",
     )
+    parser.add_argument(
+        "--include-shareveo3",
+        action="store_true",
+        help="Also load ShareVeo3 dataset (filtered by source='ShareVeo3')",
+    )
     args = parser.parse_args()
     
     print(f"📊 Loading deepfake embeddings from Neon")
-    print(f"   Filter: created_at >= {args.created_at_filter}")
+    print(f"   AVDeepfake1M filter: created_at >= {args.created_at_filter}")
+    if args.include_shareveo3:
+        print(f"   ShareVeo3 filter: source = 'ShareVeo3'")
     print(f"   Output: {args.output}")
     if args.require_complete:
         print(f"   Mode: Only loading videos with complete embeddings (all 3 types)")
@@ -688,49 +806,60 @@ def main():
     conn = connect_neon()
     
     try:
-        # Get all video_ids
-        print(f"\n📥 Fetching video_ids...")
-        video_ids = get_all_video_ids(conn, args.created_at_filter)
-        print(f"   Found {len(video_ids)} unique video_ids")
+        # Get all video_ids for AVDeepfake1M
+        print(f"\n📥 Fetching AVDeepfake1M video_ids...")
+        avd_video_ids = get_all_video_ids(conn, created_at_filter=args.created_at_filter)
+        print(f"   Found {len(avd_video_ids)} unique video_ids")
+        
+        # Get all video_ids for ShareVeo3 (if requested)
+        sv3_video_ids = []
+        if args.include_shareveo3:
+            print(f"\n📥 Fetching ShareVeo3 video_ids...")
+            sv3_video_ids = get_all_video_ids(conn, source="ShareVeo3")
+            print(f"   Found {len(sv3_video_ids)} unique video_ids")
         
         if args.dry_run:
             # Analyze distribution to explain any discrepancies
-            print(f"\n📊 Analyzing video_id distribution...")
-            analysis = analyze_video_id_distribution(conn, args.created_at_filter)
+            if avd_video_ids:
+                print(f"\n📊 Analyzing AVDeepfake1M video_id distribution...")
+                analysis = analyze_video_id_distribution(conn, args.created_at_filter)
+                
+                print(f"\n   Per-batch counts:")
+                for created_at, count in sorted(analysis["per_batch"].items()):
+                    print(f"     {created_at}: {count} videos")
+                
+                print(f"\n   Summary:")
+                print(f"     Sum of per-batch counts: {analysis['sum_per_batch']}")
+                print(f"     Unique video_ids: {analysis['unique_total']}")
+                if analysis['sum_per_batch'] != analysis['unique_total']:
+                    diff = analysis['sum_per_batch'] - analysis['unique_total']
+                    print(f"     Difference: {diff} (same video_id in multiple batches)")
+                    if analysis['duplicates']:
+                        print(f"\n   Videos appearing in multiple batches:")
+                        for vid_id, num_batches in analysis['duplicates'][:5]:
+                            print(f"     {vid_id}: appears in {num_batches} batches")
+                        if len(analysis['duplicates']) > 5:
+                            print(f"     ... and {len(analysis['duplicates']) - 5} more")
             
-            print(f"\n   Per-batch counts:")
-            for created_at, count in sorted(analysis["per_batch"].items()):
-                print(f"     {created_at}: {count} videos")
-            
-            print(f"\n   Summary:")
-            print(f"     Sum of per-batch counts: {analysis['sum_per_batch']}")
-            print(f"     Unique video_ids: {analysis['unique_total']}")
-            if analysis['sum_per_batch'] != analysis['unique_total']:
-                diff = analysis['sum_per_batch'] - analysis['unique_total']
-                print(f"     Difference: {diff} (same video_id in multiple batches)")
-                if analysis['duplicates']:
-                    print(f"\n   Videos appearing in multiple batches:")
-                    for vid_id, num_batches in analysis['duplicates'][:5]:
-                        print(f"     {vid_id}: appears in {num_batches} batches")
-                    if len(analysis['duplicates']) > 5:
-                        print(f"     ... and {len(analysis['duplicates']) - 5} more")
-            
-            print(f"\n✅ Dry run complete. Would process {len(video_ids)} unique videos.")
+            print(f"\n✅ Dry run complete.")
+            print(f"   Would process {len(avd_video_ids)} AVDeepfake1M videos")
+            if args.include_shareveo3:
+                print(f"   Would process {len(sv3_video_ids)} ShareVeo3 videos")
             return
         
-        # Process each video
-        print(f"\n🔄 Processing {len(video_ids)} videos...")
+        # Process AVDeepfake1M videos
+        print(f"\n🔄 Processing {len(avd_video_ids)} AVDeepfake1M videos...")
         videos_data = {}
         total_segments = 0
         incomplete_videos = []
         complete_count = 0
         incomplete_count = 0
         
-        for video_id in tqdm(video_ids, desc="Processing videos"):
+        for video_id in tqdm(avd_video_ids, desc="Processing AVDeepfake1M"):
             raw_data = fetch_video_data(
                 conn, 
                 video_id, 
-                args.created_at_filter,
+                created_at_filter=args.created_at_filter,
                 deduplicate=not args.no_deduplicate
             )
             
@@ -743,11 +872,45 @@ def main():
                 if not args.require_complete:
                     incomplete_videos.append((video_id, stats))
             
-            processed = process_video_data(video_id, raw_data, require_complete=args.require_complete)
+            processed = process_video_data(
+                video_id, raw_data, 
+                require_complete=args.require_complete,
+                dataset="avdeepfake1m"
+            )
             
             if processed is not None:
                 videos_data[video_id] = processed
                 total_segments += processed["num_segments"]
+        
+        # Process ShareVeo3 videos (if requested)
+        if args.include_shareveo3:
+            print(f"\n🔄 Processing {len(sv3_video_ids)} ShareVeo3 videos...")
+            for video_id in tqdm(sv3_video_ids, desc="Processing ShareVeo3"):
+                raw_data = fetch_video_data(
+                    conn, 
+                    video_id, 
+                    source="ShareVeo3",
+                    deduplicate=not args.no_deduplicate
+                )
+                
+                # Check completeness for statistics
+                is_complete, stats = check_video_completeness(raw_data)
+                if is_complete:
+                    complete_count += 1
+                else:
+                    incomplete_count += 1
+                    if not args.require_complete:
+                        incomplete_videos.append((video_id, stats))
+                
+                processed = process_video_data(
+                    video_id, raw_data, 
+                    require_complete=args.require_complete,
+                    dataset="shareveo3"
+                )
+                
+                if processed is not None:
+                    videos_data[video_id] = processed
+                    total_segments += processed["num_segments"]
         
         print(f"\n📊 Processing Summary:")
         print(f"   Complete videos: {complete_count}")
@@ -768,13 +931,22 @@ def main():
                 print(f"   ... and {len(incomplete_videos) - 10} more")
         
         # Build final data structure
+        datasets_list = ["avdeepfake1m"]
+        if args.include_shareveo3:
+            datasets_list.append("shareveo3")
+        
         data = {
             "metadata": {
-                "created_at_filter": args.created_at_filter,
+                "datasets": datasets_list,
+                "avdeepfake1m_filter": args.created_at_filter,
+                "created_at_filter": args.created_at_filter,  # Keep for backward compatibility
                 "embedding_types": list(EMBEDDING_TABLES.keys()),
                 "video_ids": sorted(videos_data.keys()),
                 "total_videos": len(videos_data),
                 "total_segments": total_segments,
+                "total_embeddings": sum(
+                    v["embeddings"]["hubert"].size for v in videos_data.values()
+                ),
                 "date_created": datetime.now().isoformat(),
             },
             "videos": videos_data,

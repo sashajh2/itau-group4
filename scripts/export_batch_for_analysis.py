@@ -42,15 +42,36 @@ def connect_neon():
 def fetch_segments_with_embeddings(
     conn: psycopg2.extensions.connection,
     embedding_table: str,
-    created_at: str,
+    created_at: str = None,
+    source: str = None,
 ) -> pd.DataFrame:
     """
-    Query segments joined with embeddings for a given table and created_at.
+    Query segments joined with embeddings.
+    
+    Args:
+        conn: Database connection
+        embedding_table: 'embeddings_audio_openl3', 'embeddings_audio_hubert', or 'embeddings_audio_senet'
+        created_at: Optional filter by created_at (uses >= for AVDeepfake1M)
+        source: Optional filter by source (e.g., 'ShareVeo3')
     
     Returns:
         DataFrame with columns: segment_id, source, video_id, video_path, start_time,
         duration, video_label, audio_label, audio_model, video_model, created_at, embedding
     """
+    # Build WHERE clause dynamically
+    where_clauses = []
+    params = []
+    
+    if created_at:
+        where_clauses.append("s.created_at >= %s")
+        params.append(created_at)
+    
+    if source:
+        where_clauses.append("s.source = %s")
+        params.append(source)
+    
+    where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    
     query = """
         SELECT
             s.segment_id,
@@ -68,14 +89,14 @@ def fetch_segments_with_embeddings(
         FROM segments s
         JOIN {table} e
           ON e.segment_id = s.segment_id
-        WHERE s.created_at = %s
+        {where_clause}
         ORDER BY s.video_id, s.video_path, s.start_time
-    """.format(table=embedding_table)
+    """.format(table=embedding_table, where_clause=where_sql)
     
     # Use psycopg2 connection directly (pandas warns but it works fine)
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=UserWarning, message='.*pandas only supports SQLAlchemy.*')
-        df = pd.read_sql_query(query, conn, params=(created_at,))
+        df = pd.read_sql_query(query, conn, params=tuple(params) if params else None)
     
     # Convert embedding from list to numpy array
     # Use tqdm for progress if there are many rows
