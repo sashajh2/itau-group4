@@ -1,0 +1,11 @@
+{
+  "num_real_samples": 4377,
+  "num_fake_samples": 5687,
+  "mean_cos_sim_real_to_source": 0.917808845343044,
+  "std_cos_sim_real_to_source": 0.15658272286698147,
+  "mean_cos_sim_fake_to_source": 0.6385806157060933,
+  "std_cos_sim_fake_to_source": 0.14495615037411416,
+  "difference_real_vs_fake": 0.2792282296369507,
+  "overall_linear_separability": 0.819556184996331,
+  "num_videos_analyzed": 229
+}

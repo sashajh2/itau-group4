@@ -28,50 +28,51 @@ def plot_cross_augmentation_timestamp(embeddings_pca, labels, source_idx,
     
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     
-    # Plot 1: Binary coloring (real=green, fake=red, source=blue star)
+    # Plot 1: Binary coloring (real=green, fake=red, source=blue circle)
     ax = axes[0]
     if is_real.any():
         ax.scatter(embeddings_pca[is_real, 0], embeddings_pca[is_real, 1],
-                  c='green', label='Real', s=100, alpha=0.6, edgecolors='black')
+                  c='green', label='Real', s=60, alpha=0.8, edgecolors='darkgreen', linewidths=1.5)
     if is_fake.any():
         ax.scatter(embeddings_pca[is_fake, 0], embeddings_pca[is_fake, 1],
-                  c='red', label='Fake', s=100, alpha=0.6, edgecolors='black')
+                  c='red', label='Fake', s=60, alpha=0.8, edgecolors='darkred', linewidths=1.5)
     ax.scatter(embeddings_pca[source_idx, 0], embeddings_pca[source_idx, 1],
-              c='blue', marker='*', s=500, label='Source', edgecolors='black', linewidths=2)
-    ax.set_xlabel('PC1')
-    ax.set_ylabel('PC2')
-    ax.legend()
-    ax.set_title(f'Real vs Fake\n{video_id} @ t={timestamp:.2f}s')
+              c='blue', marker='o', s=80, label='Source', edgecolors='darkblue', linewidths=2, zorder=10)
+    ax.set_xlabel('PC1', fontsize=11)
+    ax.set_ylabel('PC2', fontsize=11)
+    ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1), frameon=True, fancybox=True, shadow=True)
+    ax.set_title(f'Real vs Fake\n{video_id} @ t={timestamp:.2f}s', fontsize=12)
     ax.grid(alpha=0.3)
     
     # Plot 2: Continuous label coloring
     ax = axes[1]
     scatter = ax.scatter(embeddings_pca[:, 0], embeddings_pca[:, 1],
-                        c=labels, cmap='RdYlGn_r', s=100, alpha=0.7,
-                        edgecolors='black', vmin=0, vmax=1)
+                        c=labels, cmap='RdYlGn_r', s=60, alpha=0.8,
+                        edgecolors='black', linewidths=1, vmin=0, vmax=1)
     ax.scatter(embeddings_pca[source_idx, 0], embeddings_pca[source_idx, 1],
-              c='blue', marker='*', s=500, label='Source', edgecolors='black', linewidths=2)
-    plt.colorbar(scatter, ax=ax, label='Audio Label')
-    ax.set_xlabel('PC1')
-    ax.set_ylabel('PC2')
-    ax.set_title('Colored by Label Value')
+              c='blue', marker='o', s=80, label='Source', edgecolors='darkblue', linewidths=2, zorder=10)
+    cbar = plt.colorbar(scatter, ax=ax, label='Audio Label', pad=0.02)
+    cbar.ax.tick_params(labelsize=9)
+    ax.set_xlabel('PC1', fontsize=11)
+    ax.set_ylabel('PC2', fontsize=11)
+    ax.set_title('Colored by Label Value', fontsize=12)
     ax.grid(alpha=0.3)
     
     # Plot 3: Distance to source
     ax = axes[2]
     cos_sim = cosine_similarity(embeddings_pca, embeddings_pca[source_idx].reshape(1, -1)).flatten()
     colors = ['green' if r else 'red' for r in is_real]
-    bars = ax.bar(range(len(cos_sim)), cos_sim, color=colors, alpha=0.6, edgecolor='black')
+    bars = ax.bar(range(len(cos_sim)), cos_sim, color=colors, alpha=0.7, edgecolor='black', linewidth=1)
     if is_real.any():
-        ax.axhline(y=cos_sim[is_real].mean(), color='green', linestyle='--',
+        ax.axhline(y=cos_sim[is_real].mean(), color='green', linestyle='--', linewidth=2,
                   label=f'Mean Real: {cos_sim[is_real].mean():.3f}')
     if is_fake.any():
-        ax.axhline(y=cos_sim[is_fake].mean(), color='red', linestyle='--',
+        ax.axhline(y=cos_sim[is_fake].mean(), color='red', linestyle='--', linewidth=2,
                   label=f'Mean Fake: {cos_sim[is_fake].mean():.3f}')
-    ax.set_xlabel('Augmentation Index')
-    ax.set_ylabel('Cosine Similarity to Source')
-    ax.set_title('Distance to Source')
-    ax.legend()
+    ax.set_xlabel('Augmentation Index', fontsize=11)
+    ax.set_ylabel('Cosine Similarity to Source', fontsize=11)
+    ax.set_title('Distance to Source', fontsize=12)
+    ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1), frameon=True, fancybox=True, shadow=True)
     ax.grid(alpha=0.3)
     
     plt.suptitle(f'Cross-Augmentation Analysis: {embedding_type}', fontsize=14, fontweight='bold')
@@ -113,6 +114,57 @@ def plot_single_video_temporal(embeddings_pca, labels_seq, video_path):
     ax.set_title('Label Sequence')
     ax.set_ylim(-0.1, 1.1)
     ax.grid(alpha=0.3)
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_global_pca(embeddings_pca, labels, embedding_type):
+    """
+    Create a global PCA visualization of all embeddings colored by label.
+    
+    Args:
+        embeddings_pca: [num_samples, 2] PCA-transformed embeddings (first 2 components)
+        labels: [num_samples] audio labels
+        embedding_type: Type of embedding
+    
+    Returns:
+        matplotlib Figure object
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(12, 10))
+    
+    # Create scatter plot colored by label
+    scatter = ax.scatter(
+        embeddings_pca[:, 0], 
+        embeddings_pca[:, 1],
+        c=labels, 
+        cmap='RdYlGn_r', 
+        s=20, 
+        alpha=0.6, 
+        vmin=0, 
+        vmax=1,
+        edgecolors='none'  # No edge colors for cleaner look with many points
+    )
+    
+    # Add colorbar
+    cbar = plt.colorbar(scatter, ax=ax, label='Audio Label (0=Real, 1=Fake)', pad=0.02)
+    cbar.ax.tick_params(labelsize=10)
+    
+    # Labels and title
+    ax.set_xlabel('PC1', fontsize=12)
+    ax.set_ylabel('PC2', fontsize=12)
+    ax.set_title(f'Global PCA: {embedding_type.upper()} Embeddings\n'
+                 f'{len(embeddings_pca):,} samples colored by audio label', 
+                 fontsize=14, fontweight='bold')
+    ax.grid(alpha=0.3)
+    
+    # Add statistics text box
+    real_count = np.sum(labels == 0)
+    fake_count = np.sum(labels > 0)
+    stats_text = f'Real (label=0): {real_count:,}\nFake (label>0): {fake_count:,}'
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=10, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     
     plt.tight_layout()
     return fig

@@ -62,9 +62,6 @@ def analyze_single_timestamp(embeddings: np.ndarray, labels: np.ndarray,
         
         # Effect size
         'cohens_d': cohens_d_multivariate(embeddings[is_real], embeddings[is_fake]) if is_real.any() and is_fake.any() else None,
-        
-        # Linear separability
-        'linear_separability': linear_classifier_accuracy(embeddings, labels > 0) if len(np.unique(labels > 0)) > 1 else None,
     }
     
     return metrics
