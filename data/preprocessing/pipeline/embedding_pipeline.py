@@ -39,11 +39,53 @@ def get_segments_by_created_at_neon(created_at: str) -> list[dict]:
     return segments
 
 
+def get_segments_with_existing_embeddings(created_at: str, version: str) -> set[str]:
+    """
+    Get set of segment_ids that already have embeddings for the given version.
+    
+    Checks all embedding tables (hubert, openl3, senet) for the given version.
+    Returns a set of segment_ids that have at least one embedding.
+    """
+    config = load_config()
+    dsn = config["database"]["postgres"]["neon_database_url"]
+    
+    conn = psycopg2.connect(dsn)
+    cursor = conn.cursor()
+    
+    # Check all embedding tables
+    embedding_tables = [
+        "embeddings_audio_hubert",
+        "embeddings_audio_openl3",
+        "embeddings_video_senet",
+    ]
+    
+    all_segment_ids = set()
+    
+    for table in embedding_tables:
+        cursor.execute(f"""
+            SELECT DISTINCT e.segment_id
+            FROM {table} e
+            JOIN segments s ON e.segment_id = s.segment_id
+            WHERE s.created_at = %s AND e.version = %s
+        """, (created_at, version))
+        
+        segment_ids = {row[0] for row in cursor.fetchall()}
+        all_segment_ids.update(segment_ids)
+        print(f"  📊 Found {len(segment_ids)} segments with embeddings in {table}")
+    
+    cursor.close()
+    conn.close()
+    
+    print(f"📊 Total: {len(all_segment_ids)} unique segments already have embeddings")
+    return all_segment_ids
+
+
 def generate_for_created_at(
     created_at: str, 
     output_dir: str = "./embeddings/generated", 
     shard_writer: Optional[ShardWriter] = None, 
     neon_writer: Optional[NeonEmbeddingWriter] = None,
+    skip_existing: bool = True,
 ) -> tuple[int, int]:
     """
     Generate embeddings for all segments with the given created_at.
@@ -53,6 +95,7 @@ def generate_for_created_at(
         output_dir: Directory for output (currently unused but kept for compatibility)
         shard_writer: Optional ShardWriter for file-based storage
         neon_writer: Optional NeonEmbeddingWriter for Neon Postgres storage
+        skip_existing: If True, skip segments that already have embeddings (saves computation)
 
     Returns (num_segments, num_embeddings_written)
     """
@@ -66,6 +109,22 @@ def generate_for_created_at(
 
     if shard_writer is None and neon_writer is None:
         raise ValueError("Provide either shard_writer or neon_writer")
+    
+    # Filter out segments that already have embeddings (if requested and neon_writer provided)
+    original_count = len(segments)
+    if skip_existing and neon_writer is not None:
+        print(f"\n🔍 Checking for existing embeddings (version={neon_writer.version})...")
+        existing_segment_ids = get_segments_with_existing_embeddings(created_at, neon_writer.version)
+        
+        if existing_segment_ids:
+            segments = [s for s in segments if s['segment_id'] not in existing_segment_ids]
+            skipped_count = original_count - len(segments)
+            print(f"⏭️  Skipping {skipped_count} segments that already have embeddings")
+            print(f"📝 Will process {len(segments)} remaining segments")
+        
+        if len(segments) == 0:
+            print("✅ All segments already have embeddings! Nothing to do.")
+            return original_count, 0
     
     # Process segments in batches to flush incrementally
     batch_size = 1000  # Process 1000 segments at a time
