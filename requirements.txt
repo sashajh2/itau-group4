@@ -30,3 +30,7 @@ instaloader
 huggingface_hub[hf_xet]
 requests
 psycopg2-binary==2.9.9
+# Embedding analysis dependencies
+h5py
+scipy
+umap-learn

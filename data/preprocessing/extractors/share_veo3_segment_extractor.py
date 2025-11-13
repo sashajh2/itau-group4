@@ -112,8 +112,8 @@ def insert_share_veo3_segments_to_neon(segments: list, segment_writer: NeonSegme
                 video_path=video_path,
                 start_time=float(segment['start_time']),
                 duration=float(segment['duration']),
-                video_label=1,  # video_label = 1 (fake)
-                audio_label=1,  # audio_label = 1 (fake)
+                video_label=1.0,  # video_label = 1.0 (fake, stored as float)
+                audio_label=1.0,  # audio_label = 1.0 (fake, stored as float)
                 audio_model="veo3",
                 video_model="veo3",
                 created_at=created_at,

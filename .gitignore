@@ -21,6 +21,9 @@ data/faiss_indexes/
 # Ignore retrieved embeddings
 embeddings/retrieved/
 
+# Ignore exports
+exports/
+
 # Ignore sqlite tables
 sqlite3_tables/
 

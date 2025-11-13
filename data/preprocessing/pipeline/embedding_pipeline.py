@@ -39,11 +39,53 @@ def get_segments_by_created_at_neon(created_at: str) -> list[dict]:
     return segments
 
 
+def get_segments_with_existing_embeddings(created_at: str, version: str) -> set[str]:
+    """
+    Get set of segment_ids that already have embeddings for the given version.
+    
+    Checks all embedding tables (hubert, openl3, senet) for the given version.
+    Returns a set of segment_ids that have at least one embedding.
+    """
+    config = load_config()
+    dsn = config["database"]["postgres"]["neon_database_url"]
+    
+    conn = psycopg2.connect(dsn)
+    cursor = conn.cursor()
+    
+    # Check all embedding tables
+    embedding_tables = [
+        "embeddings_audio_hubert",
+        "embeddings_audio_openl3",
+        "embeddings_video_senet",
+    ]
+    
+    all_segment_ids = set()
+    
+    for table in embedding_tables:
+        cursor.execute(f"""
+            SELECT DISTINCT e.segment_id
+            FROM {table} e
+            JOIN segments s ON e.segment_id = s.segment_id
+            WHERE s.created_at = %s AND e.version = %s
+        """, (created_at, version))
+        
+        segment_ids = {row[0] for row in cursor.fetchall()}
+        all_segment_ids.update(segment_ids)
+        print(f"  📊 Found {len(segment_ids)} segments with embeddings in {table}")
+    
+    cursor.close()
+    conn.close()
+    
+    print(f"📊 Total: {len(all_segment_ids)} unique segments already have embeddings")
+    return all_segment_ids
+
+
 def generate_for_created_at(
     created_at: str, 
     output_dir: str = "./embeddings/generated", 
     shard_writer: Optional[ShardWriter] = None, 
-    neon_writer: Optional[NeonEmbeddingWriter] = None
+    neon_writer: Optional[NeonEmbeddingWriter] = None,
+    skip_existing: bool = True,
 ) -> tuple[int, int]:
     """
     Generate embeddings for all segments with the given created_at.
@@ -53,10 +95,11 @@ def generate_for_created_at(
         output_dir: Directory for output (currently unused but kept for compatibility)
         shard_writer: Optional ShardWriter for file-based storage
         neon_writer: Optional NeonEmbeddingWriter for Neon Postgres storage
+        skip_existing: If True, skip segments that already have embeddings (saves computation)
 
     Returns (num_segments, num_embeddings_written)
     """
-    print(f"Getting segments for {created_at}")
+    print(f"🔍 Getting segments for created_at={created_at}")
     segments = get_segments_by_created_at_neon(created_at)
     print(f"Found {len(segments)} segments")
     
@@ -64,27 +107,74 @@ def generate_for_created_at(
         print("❌ No segments found for the specified created_at timestamp")
         return 0, 0
 
-    print("🔄 Generating embeddings for all segments...")
-    accumulator = embed_segments(segments)
-    print("✅ Embedding generation complete")
-
-    attempted = 0
     if shard_writer is None and neon_writer is None:
         raise ValueError("Provide either shard_writer or neon_writer")
     
-    for (mode, model, noise, denoiser_name), data in accumulator.items():
-        embs = data["embeddings"]
-        seg_ids = data["segment_ids"]
-        for seg_id, emb in zip(seg_ids, embs):
-            if neon_writer is not None:
-                neon_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
-            else:
-                shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
-            attempted += 1
-
+    # Filter out segments that already have embeddings (if requested and neon_writer provided)
+    original_count = len(segments)
+    if skip_existing and neon_writer is not None:
+        print(f"\n🔍 Checking for existing embeddings (version={neon_writer.version})...")
+        existing_segment_ids = get_segments_with_existing_embeddings(created_at, neon_writer.version)
+        
+        if existing_segment_ids:
+            segments = [s for s in segments if s['segment_id'] not in existing_segment_ids]
+            skipped_count = original_count - len(segments)
+            print(f"⏭️  Skipping {skipped_count} segments that already have embeddings")
+            print(f"📝 Will process {len(segments)} remaining segments")
+        
+        if len(segments) == 0:
+            print("✅ All segments already have embeddings! Nothing to do.")
+            return original_count, 0
+    
+    # Process segments in batches to flush incrementally
+    batch_size = 1000  # Process 1000 segments at a time
+    total_attempted = 0
+    total_segments = len(segments)
+    
+    print(f"🔄 Processing {total_segments} segments in batches of {batch_size}...")
+    
+    for batch_start in range(0, total_segments, batch_size):
+        batch_end = min(batch_start + batch_size, total_segments)
+        batch_segments = segments[batch_start:batch_end]
+        batch_num = (batch_start // batch_size) + 1
+        total_batches = (total_segments + batch_size - 1) // batch_size
+        
+        print(f"\n📦 Batch {batch_num}/{total_batches}: Processing segments {batch_start+1}-{batch_end} ({len(batch_segments)} segments)")
+        
+        # Generate embeddings for this batch
+        print(f"  🔄 Generating embeddings...")
+        accumulator = embed_segments(batch_segments)
+        print(f"  ✅ Generated embeddings for batch {batch_num}")
+        
+        # Write embeddings to Neon immediately
+        batch_attempted = 0
+        for (mode, model, noise, denoiser_name), data in accumulator.items():
+            embs = data["embeddings"]
+            seg_ids = data["segment_ids"]
+            for seg_id, emb in zip(seg_ids, embs):
+                if neon_writer is not None:
+                    neon_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
+                else:
+                    shard_writer.add(model, mode, noise, denoiser_name, seg_id, emb)
+                batch_attempted += 1
+                total_attempted += 1
+        
+        # Flush immediately after each batch
+        if neon_writer is not None:
+            print(f"  💾 Flushing {batch_attempted} embeddings from batch {batch_num} to Neon...")
+            try:
+                neon_writer.flush_all()
+                print(f"  ✅ Successfully flushed batch {batch_num} to Neon")
+            except Exception as e:
+                print(f"  ❌ ERROR flushing batch {batch_num}: {e}")
+                raise
+        print(f"  ✅ Batch {batch_num} complete ({batch_attempted} embeddings written)")
+    
+    print(f"\n✅ All batches complete! Total: {total_segments} segments, {total_attempted} embeddings")
+    
     # Note: Don't flush/close neon_writer here - let the caller manage it
     # This allows batch_pipeline to flush at appropriate times
-    return len(segments), attempted
+    return total_segments, total_attempted
 
 
 def main():
