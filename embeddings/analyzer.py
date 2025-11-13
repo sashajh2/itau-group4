@@ -368,9 +368,9 @@ class DeepfakeEmbeddingAnalyzer:
         
         return pd.DataFrame(results)
     
-    def compute_aggregate_statistics(self, max_videos: Optional[int] = None) -> Dict:
+    def compute_aggregate_statistics(self, max_videos: Optional[int] = None, include_shareveo3: bool = False) -> Dict:
         """
-        Compute aggregate statistics across all AVDeepfake1M videos.
+        Compute aggregate statistics across videos.
         
         Computes:
         1. Average cosine similarity of real augmentations to source vs fake augmentations to source
@@ -378,6 +378,7 @@ class DeepfakeEmbeddingAnalyzer:
         
         Args:
             max_videos: Optional limit on number of videos to analyze
+            include_shareveo3: If True, include ShareVeo3 videos in analysis (default: False, only AVDeepfake1M)
         
         Returns:
             Dictionary with aggregate statistics
@@ -388,6 +389,7 @@ class DeepfakeEmbeddingAnalyzer:
         
         real_to_source_similarities = []
         fake_to_source_similarities = []
+        real_fake_centroid_distances = []  # Cosine distance between real and fake centroids
         all_embeddings = []
         all_binary_labels = []
         videos_analyzed = 0
@@ -397,17 +399,28 @@ class DeepfakeEmbeddingAnalyzer:
             video_ids = video_ids[:max_videos]
         
         print("Computing aggregate statistics...")
+        if include_shareveo3:
+            print("   Including ShareVeo3 videos in analysis")
+        else:
+            print("   Only analyzing AVDeepfake1M videos (ShareVeo3 excluded)")
+        
         for video_id in tqdm(video_ids, desc="Processing videos"):
             try:
                 video_data = self.get_video_data(video_id)
                 
-                # Skip single-augmentation videos (ShareVeo3)
-                if video_data['num_augmentations'] == 1:
-                    continue
-                
-                # Skip if not AVDeepfake1M
-                if video_data['dataset'] != 'avdeepfake1m':
-                    continue
+                # Filter by dataset
+                if not include_shareveo3:
+                    # Skip if not AVDeepfake1M
+                    if video_data['dataset'] != 'avdeepfake1m':
+                        continue
+                    # Skip single-augmentation videos (ShareVeo3, but also catch any AVDeepfake with only 1 aug)
+                    if video_data['num_augmentations'] == 1:
+                        continue
+                else:
+                    # Include both datasets, but skip single-augmentation AVDeepfake videos
+                    # (ShareVeo3 videos have 1 augmentation by design, which is fine)
+                    if video_data['dataset'] == 'avdeepfake1m' and video_data['num_augmentations'] == 1:
+                        continue
                 
                 videos_analyzed += 1
                 num_segments = video_data['num_segments']
@@ -435,6 +448,22 @@ class DeepfakeEmbeddingAnalyzer:
                         real_to_source_similarities.extend(cos_sim[is_real].tolist())
                     if is_fake.any():
                         fake_to_source_similarities.extend(cos_sim[is_fake].tolist())
+                    
+                    # Compute centroid distance between real and fake augmentations
+                    if is_real.any() and is_fake.any():
+                        # Compute centroids
+                        real_centroid = np.mean(embeddings[is_real], axis=0)
+                        fake_centroid = np.mean(embeddings[is_fake], axis=0)
+                        
+                        # Compute cosine similarity between centroids
+                        centroid_cos_sim = cosine_similarity(
+                            real_centroid.reshape(1, -1), 
+                            fake_centroid.reshape(1, -1)
+                        )[0, 0]
+                        
+                        # Convert to cosine distance (1 - similarity)
+                        centroid_cos_distance = 1.0 - centroid_cos_sim
+                        real_fake_centroid_distances.append(centroid_cos_distance)
                     
                     # Collect for linear separability analysis
                     all_embeddings.append(embeddings)
@@ -489,13 +518,18 @@ class DeepfakeEmbeddingAnalyzer:
                 float(np.mean(real_to_source_similarities) - np.mean(fake_to_source_similarities))
                 if real_to_source_similarities and fake_to_source_similarities else None
             ),
+            'mean_cos_distance_real_fake_centroids': float(np.mean(real_fake_centroid_distances)) if real_fake_centroid_distances else None,
+            'std_cos_distance_real_fake_centroids': float(np.std(real_fake_centroid_distances)) if real_fake_centroid_distances else None,
+            'num_timestamps_with_both_labels': len(real_fake_centroid_distances),
             'overall_linear_separability': linear_separability,  # Cross-validated accuracy (0-1)
-            'num_videos_analyzed': videos_analyzed
+            'num_videos_analyzed': videos_analyzed,
+            'include_shareveo3': include_shareveo3
         }
         
         return stats
     
-    def plot_global_pca(self, sample_size: int = 10000, save_fig: Optional[str] = None):
+    def plot_global_pca(self, sample_size: int = 10000, save_fig: Optional[str] = None, 
+                      color_by_dataset: bool = True, filter_shareveo3: bool = False):
         """
         Create a global PCA visualization of all embeddings colored by label.
         Uses balanced sampling of real and fake embeddings.
@@ -503,17 +537,24 @@ class DeepfakeEmbeddingAnalyzer:
         Args:
             sample_size: Number of embedding vectors to sample for visualization (split between real/fake)
             save_fig: Optional path to save figure
+            color_by_dataset: If True, color ShareVeo3 embeddings differently (purple) from AVDeepfake
+            filter_shareveo3: If True, exclude ShareVeo3 embeddings from the plot (only show AVDeepfake)
         
         Returns:
             matplotlib Figure object
         """
-        print(f"\n📊 Creating global PCA visualization (sampling {sample_size} embeddings, balanced)...")
+        if filter_shareveo3:
+            print(f"\n📊 Creating global PCA visualization (AVDeepfake only, sampling {sample_size} embeddings, balanced)...")
+        else:
+            print(f"\n📊 Creating global PCA visualization (sampling {sample_size} embeddings, balanced)...")
         
         # Collect embeddings and labels separately for real and fake
         real_embeddings = []
         real_labels = []
+        real_datasets = []  # Track dataset source
         fake_embeddings = []
         fake_labels = []
+        fake_datasets = []  # Track dataset source
         
         with h5py.File(self.data_path, 'r') as f:
             video_ids = [vid.decode() if isinstance(vid, bytes) else vid 
@@ -532,9 +573,21 @@ class DeepfakeEmbeddingAnalyzer:
                     
                     labels = f[f'videos/{safe_id}/labels/audio'][:]
                     
+                    # Get dataset source
+                    dataset = f[f'videos/{safe_id}'].attrs.get('dataset', 'avdeepfake1m')
+                    if isinstance(dataset, bytes):
+                        dataset = dataset.decode()
+                    
+                    # Filter out ShareVeo3 if requested
+                    if filter_shareveo3 and dataset == 'shareveo3':
+                        continue
+                    
                     # Flatten: [num_augs, num_segs, emb_dim] -> [num_augs*num_segs, emb_dim]
                     emb_flat = emb.reshape(-1, emb.shape[-1])
                     labels_flat = labels.flatten()
+                    
+                    # Create dataset array matching flattened embeddings
+                    dataset_flat = np.full(len(labels_flat), dataset)
                     
                     # Separate real and fake
                     is_real = labels_flat == 0
@@ -543,9 +596,11 @@ class DeepfakeEmbeddingAnalyzer:
                     if is_real.any():
                         real_embeddings.append(emb_flat[is_real])
                         real_labels.append(labels_flat[is_real])
+                        real_datasets.append(dataset_flat[is_real])
                     if is_fake.any():
                         fake_embeddings.append(emb_flat[is_fake])
                         fake_labels.append(labels_flat[is_fake])
+                        fake_datasets.append(dataset_flat[is_fake])
                 except (KeyError, ValueError):
                     continue
         
@@ -561,18 +616,29 @@ class DeepfakeEmbeddingAnalyzer:
         if len(real_embeddings) > 0:
             real_embeddings = np.vstack(real_embeddings)
             real_labels = np.concatenate(real_labels)
+            real_datasets = np.concatenate(real_datasets)
         else:
             real_embeddings = np.array([]).reshape(0, emb_dim)
             real_labels = np.array([])
+            real_datasets = np.array([])
         
         if len(fake_embeddings) > 0:
             fake_embeddings = np.vstack(fake_embeddings)
             fake_labels = np.concatenate(fake_labels)
+            fake_datasets = np.concatenate(fake_datasets)
         else:
             fake_embeddings = np.array([]).reshape(0, emb_dim)
             fake_labels = np.array([])
+            fake_datasets = np.array([])
         
         print(f"   Collected {len(real_embeddings):,} real and {len(fake_embeddings):,} fake embeddings")
+        if color_by_dataset:
+            real_avd = np.sum(real_datasets == 'avdeepfake1m')
+            real_sv3 = np.sum(real_datasets == 'shareveo3')
+            fake_avd = np.sum(fake_datasets == 'avdeepfake1m')
+            fake_sv3 = np.sum(fake_datasets == 'shareveo3')
+            print(f"   Real: {real_avd:,} AVDeepfake, {real_sv3:,} ShareVeo3")
+            print(f"   Fake: {fake_avd:,} AVDeepfake, {fake_sv3:,} ShareVeo3")
         
         # Sample balanced amounts
         samples_per_class = sample_size // 2
@@ -582,35 +648,44 @@ class DeepfakeEmbeddingAnalyzer:
                 real_idx = np.random.choice(len(real_embeddings), samples_per_class, replace=False)
                 real_sample = real_embeddings[real_idx]
                 real_labels_sample = real_labels[real_idx]
+                real_datasets_sample = real_datasets[real_idx]
             else:
                 real_sample = real_embeddings
                 real_labels_sample = real_labels
+                real_datasets_sample = real_datasets
         else:
             real_sample = np.array([]).reshape(0, emb_dim)
             real_labels_sample = np.array([])
+            real_datasets_sample = np.array([])
         
         if len(fake_embeddings) > 0:
             if len(fake_embeddings) > samples_per_class:
                 fake_idx = np.random.choice(len(fake_embeddings), samples_per_class, replace=False)
                 fake_sample = fake_embeddings[fake_idx]
                 fake_labels_sample = fake_labels[fake_idx]
+                fake_datasets_sample = fake_datasets[fake_idx]
             else:
                 fake_sample = fake_embeddings
                 fake_labels_sample = fake_labels
+                fake_datasets_sample = fake_datasets
         else:
             fake_sample = np.array([]).reshape(0, emb_dim)
             fake_labels_sample = np.array([])
+            fake_datasets_sample = np.array([])
         
         # Combine
         if len(real_sample) > 0 and len(fake_sample) > 0:
             all_embeddings = np.vstack([real_sample, fake_sample])
             all_labels = np.concatenate([real_labels_sample, fake_labels_sample])
+            all_datasets = np.concatenate([real_datasets_sample, fake_datasets_sample])
         elif len(real_sample) > 0:
             all_embeddings = real_sample
             all_labels = real_labels_sample
+            all_datasets = real_datasets_sample
         elif len(fake_sample) > 0:
             all_embeddings = fake_sample
             all_labels = fake_labels_sample
+            all_datasets = fake_datasets_sample
         else:
             raise ValueError("No embeddings found for global PCA visualization")
         
@@ -625,7 +700,8 @@ class DeepfakeEmbeddingAnalyzer:
         
         # Create visualization
         from embeddings.visualization import plot_global_pca
-        fig = plot_global_pca(embeddings_pca, all_labels, self.embedding_type)
+        fig = plot_global_pca(embeddings_pca, all_labels, self.embedding_type, 
+                             datasets=all_datasets if color_by_dataset else None)
         
         if save_fig:
             fig.savefig(save_fig, dpi=300, bbox_inches='tight')

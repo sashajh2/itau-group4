@@ -91,12 +91,23 @@ def run_experiments_for_embedding_type(embedding_type: str, data_path: str, outp
     analyzer.fit_global_pca(n_components=50, sample_size=50000)
     print()
     
-    # Create global PCA visualization
+    # Create global PCA visualizations
     print("=" * 80)
     print("Global PCA Visualization")
     print("=" * 80)
-    global_pca_fig = figures_dir / f'global_pca_all_embeddings_{embedding_type}.png'
-    analyzer.plot_global_pca(sample_size=20000, save_fig=str(global_pca_fig))
+    
+    # Plot 1: All embeddings (AVDeepfake + ShareVeo3, ShareVeo3 in purple)
+    print("\n📊 Generating Global PCA with all datasets (AVDeepfake + ShareVeo3)...")
+    global_pca_fig_all = figures_dir / f'global_pca_all_embeddings_{embedding_type}.png'
+    analyzer.plot_global_pca(sample_size=20000, save_fig=str(global_pca_fig_all), 
+                            color_by_dataset=True, filter_shareveo3=False)
+    print()
+    
+    # Plot 2: Only AVDeepfake (ShareVeo3 removed)
+    print("\n📊 Generating Global PCA with AVDeepfake only (ShareVeo3 removed)...")
+    global_pca_fig_avd = figures_dir / f'global_pca_avdeepfake_only_{embedding_type}.png'
+    analyzer.plot_global_pca(sample_size=20000, save_fig=str(global_pca_fig_avd), 
+                            color_by_dataset=False, filter_shareveo3=True)
     print()
     
     # Run Experiment 1: Cross-augmentation analysis for each candidate
@@ -178,9 +189,11 @@ def run_experiments_for_embedding_type(embedding_type: str, data_path: str, outp
     print("Aggregate Statistics: Real vs Fake Similarity to Source")
     print("=" * 80)
     
-    agg_stats = analyzer.compute_aggregate_statistics(max_videos=None)
+    # Compute statistics for AVDeepfake only (default)
+    agg_stats = analyzer.compute_aggregate_statistics(max_videos=None, include_shareveo3=False)
     
-    print(f"\n📊 Results across {agg_stats['num_videos_analyzed']} AVDeepfake1M videos:")
+    dataset_label = "AVDeepfake1M" if not agg_stats['include_shareveo3'] else "AVDeepfake1M + ShareVeo3"
+    print(f"\n📊 Results across {agg_stats['num_videos_analyzed']} {dataset_label} videos:")
     print(f"\n   Real augmentations to source:")
     print(f"     Mean cosine similarity: {agg_stats['mean_cos_sim_real_to_source']:.4f}")
     print(f"     Std cosine similarity:  {agg_stats['std_cos_sim_real_to_source']:.4f}")
@@ -198,6 +211,15 @@ def run_experiments_for_embedding_type(embedding_type: str, data_path: str, outp
             print(f"     → Real augmentations are {diff:.4f} MORE similar to source")
         else:
             print(f"     → Fake augmentations are {abs(diff):.4f} MORE similar to source")
+    
+    print(f"\n   Real vs Fake centroid separation:")
+    if agg_stats['mean_cos_distance_real_fake_centroids'] is not None:
+        print(f"     Mean cosine distance: {agg_stats['mean_cos_distance_real_fake_centroids']:.4f}")
+        print(f"     Std cosine distance:  {agg_stats['std_cos_distance_real_fake_centroids']:.4f}")
+        print(f"     Number of timestamps: {agg_stats['num_timestamps_with_both_labels']:,}")
+        print(f"     (Higher distance = better separation between real and fake)")
+    else:
+        print(f"     Could not compute (no timestamps with both real and fake labels)")
     
     print(f"\n   Overall linear separability (label 0 vs label != 0):")
     if agg_stats['overall_linear_separability'] is not None:

@@ -120,10 +120,13 @@ def main():
     try:
         # Get all video_ids for AVDeepfake1M
         # Only include videos that have segments with all 3 embeddings
+        # Filter: source = 'AVDeepfake1M' AND created_at >= filter_date
         print(f"\n📥 Fetching AVDeepfake1M video_ids (with all 3 embeddings)...")
+        print(f"   Filter: source = 'AVDeepfake1M' AND created_at >= {args.created_at_filter}")
         avd_video_ids = get_all_video_ids(
             conn, 
             created_at_filter=args.created_at_filter,
+            source="AVDeepfake1M",
             require_all_embeddings=True
         )
         print(f"   Found {len(avd_video_ids)} unique video_ids with all embeddings")
@@ -178,12 +181,22 @@ def main():
         excluded_segments_count = 0
         
         for video_id in tqdm(avd_video_ids, desc="Processing AVDeepfake1M"):
+            # Fetch video data for AVDeepfake1M
+            # Note: We need to filter by source='AVDeepfake1M' AND created_at filter
+            # Since fetch_video_data doesn't support source filter, we'll filter after fetching
             raw_data = fetch_video_data(
                 conn, 
                 video_id, 
                 created_at_filter=args.created_at_filter,
                 deduplicate=not args.no_deduplicate
             )
+            
+            # Filter to only AVDeepfake1M segments (with date filter already applied)
+            raw_data = [seg for seg in raw_data if seg.get('source') == 'AVDeepfake1M']
+            
+            # Skip if no data after filtering
+            if not raw_data:
+                continue
             
             # Count segments before filtering (for statistics)
             segments_before = len(raw_data)

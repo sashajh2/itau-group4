@@ -119,49 +119,106 @@ def plot_single_video_temporal(embeddings_pca, labels_seq, video_path):
     return fig
 
 
-def plot_global_pca(embeddings_pca, labels, embedding_type):
+def plot_global_pca(embeddings_pca, labels, embedding_type, datasets=None):
     """
     Create a global PCA visualization of all embeddings colored by label.
+    Optionally color ShareVeo3 embeddings differently (purple).
     
     Args:
         embeddings_pca: [num_samples, 2] PCA-transformed embeddings (first 2 components)
         labels: [num_samples] audio labels
         embedding_type: Type of embedding
+        datasets: Optional [num_samples] array of dataset names ('avdeepfake1m' or 'shareveo3')
     
     Returns:
         matplotlib Figure object
     """
     fig, ax = plt.subplots(1, 1, figsize=(12, 10))
     
-    # Create scatter plot colored by label
-    scatter = ax.scatter(
-        embeddings_pca[:, 0], 
-        embeddings_pca[:, 1],
-        c=labels, 
-        cmap='RdYlGn_r', 
-        s=20, 
-        alpha=0.6, 
-        vmin=0, 
-        vmax=1,
-        edgecolors='none'  # No edge colors for cleaner look with many points
-    )
-    
-    # Add colorbar
-    cbar = plt.colorbar(scatter, ax=ax, label='Audio Label (0=Real, 1=Fake)', pad=0.02)
-    cbar.ax.tick_params(labelsize=10)
+    if datasets is not None:
+        # Color by dataset: ShareVeo3 in purple, AVDeepfake by label
+        is_shareveo3 = datasets == 'shareveo3'
+        is_avdeepfake = datasets == 'avdeepfake1m'
+        
+        # Plot AVDeepfake embeddings colored by label
+        if is_avdeepfake.any():
+            avd_embeddings = embeddings_pca[is_avdeepfake]
+            avd_labels = labels[is_avdeepfake]
+            scatter_avd = ax.scatter(
+                avd_embeddings[:, 0], 
+                avd_embeddings[:, 1],
+                c=avd_labels, 
+                cmap='RdYlGn_r', 
+                s=20, 
+                alpha=0.6, 
+                vmin=0, 
+                vmax=1,
+                edgecolors='none',
+                label='AVDeepfake'
+            )
+        
+        # Plot ShareVeo3 embeddings in purple
+        if is_shareveo3.any():
+            sv3_embeddings = embeddings_pca[is_shareveo3]
+            scatter_sv3 = ax.scatter(
+                sv3_embeddings[:, 0], 
+                sv3_embeddings[:, 1],
+                c='purple', 
+                s=20, 
+                alpha=0.6, 
+                edgecolors='none',
+                label='ShareVeo3'
+            )
+        
+        # Add colorbar for AVDeepfake (if present)
+        if is_avdeepfake.any():
+            cbar = plt.colorbar(scatter_avd, ax=ax, label='Audio Label (0=Real, 1=Fake) - AVDeepfake', pad=0.02)
+            cbar.ax.tick_params(labelsize=10)
+        
+        # Add legend
+        ax.legend(loc='upper left', fontsize=10)
+    else:
+        # Original behavior: color all by label
+        scatter = ax.scatter(
+            embeddings_pca[:, 0], 
+            embeddings_pca[:, 1],
+            c=labels, 
+            cmap='RdYlGn_r', 
+            s=20, 
+            alpha=0.6, 
+            vmin=0, 
+            vmax=1,
+            edgecolors='none'  # No edge colors for cleaner look with many points
+        )
+        
+        # Add colorbar
+        cbar = plt.colorbar(scatter, ax=ax, label='Audio Label (0=Real, 1=Fake)', pad=0.02)
+        cbar.ax.tick_params(labelsize=10)
     
     # Labels and title
     ax.set_xlabel('PC1', fontsize=12)
     ax.set_ylabel('PC2', fontsize=12)
-    ax.set_title(f'Global PCA: {embedding_type.upper()} Embeddings\n'
-                 f'{len(embeddings_pca):,} samples colored by audio label', 
-                 fontsize=14, fontweight='bold')
+    title = f'Global PCA: {embedding_type.upper()} Embeddings\n{len(embeddings_pca):,} samples'
+    if datasets is not None:
+        avd_count = np.sum(datasets == 'avdeepfake1m') if datasets is not None else 0
+        sv3_count = np.sum(datasets == 'shareveo3') if datasets is not None else 0
+        title += f' ({avd_count:,} AVDeepfake, {sv3_count:,} ShareVeo3)'
+    else:
+        title += ' colored by audio label'
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.grid(alpha=0.3)
     
     # Add statistics text box
     real_count = np.sum(labels == 0)
     fake_count = np.sum(labels > 0)
     stats_text = f'Real (label=0): {real_count:,}\nFake (label>0): {fake_count:,}'
+    if datasets is not None:
+        avd_real = np.sum((labels == 0) & (datasets == 'avdeepfake1m'))
+        avd_fake = np.sum((labels > 0) & (datasets == 'avdeepfake1m'))
+        sv3_real = np.sum((labels == 0) & (datasets == 'shareveo3'))
+        sv3_fake = np.sum((labels > 0) & (datasets == 'shareveo3'))
+        stats_text += f'\n\nAVDeepfake: {avd_real:,} real, {avd_fake:,} fake'
+        stats_text += f'\nShareVeo3: {sv3_real:,} real, {sv3_fake:,} fake'
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
             fontsize=10, verticalalignment='top',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
