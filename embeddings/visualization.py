@@ -119,16 +119,17 @@ def plot_single_video_temporal(embeddings_pca, labels_seq, video_path):
     return fig
 
 
-def plot_global_pca(embeddings_pca, labels, embedding_type, datasets=None):
+def plot_global_pca(embeddings_pca, labels, embedding_type, datasets=None, label_type='audio'):
     """
     Create a global PCA visualization of all embeddings colored by label.
     Optionally color ShareVeo3 embeddings differently (purple).
     
     Args:
         embeddings_pca: [num_samples, 2] PCA-transformed embeddings (first 2 components)
-        labels: [num_samples] audio labels
+        labels: [num_samples] labels (audio or video depending on embedding_type)
         embedding_type: Type of embedding
         datasets: Optional [num_samples] array of dataset names ('avdeepfake1m' or 'shareveo3')
+        label_type: 'audio' or 'video' - determines the label name in the plot
     
     Returns:
         matplotlib Figure object
@@ -172,7 +173,8 @@ def plot_global_pca(embeddings_pca, labels, embedding_type, datasets=None):
         
         # Add colorbar for AVDeepfake (if present)
         if is_avdeepfake.any():
-            cbar = plt.colorbar(scatter_avd, ax=ax, label='Audio Label (0=Real, 1=Fake) - AVDeepfake', pad=0.02)
+            label_name = 'Video Label' if label_type == 'video' else 'Audio Label'
+            cbar = plt.colorbar(scatter_avd, ax=ax, label=f'{label_name} (0=Real, 1=Fake) - AVDeepfake', pad=0.02)
             cbar.ax.tick_params(labelsize=10)
         
         # Add legend
@@ -192,19 +194,21 @@ def plot_global_pca(embeddings_pca, labels, embedding_type, datasets=None):
         )
         
         # Add colorbar
-        cbar = plt.colorbar(scatter, ax=ax, label='Audio Label (0=Real, 1=Fake)', pad=0.02)
+        label_name = 'Video Label' if label_type == 'video' else 'Audio Label'
+        cbar = plt.colorbar(scatter, ax=ax, label=f'{label_name} (0=Real, 1=Fake)', pad=0.02)
         cbar.ax.tick_params(labelsize=10)
     
     # Labels and title
     ax.set_xlabel('PC1', fontsize=12)
     ax.set_ylabel('PC2', fontsize=12)
+    label_name = 'video' if label_type == 'video' else 'audio'
     title = f'Global PCA: {embedding_type.upper()} Embeddings\n{len(embeddings_pca):,} samples'
     if datasets is not None:
         avd_count = np.sum(datasets == 'avdeepfake1m') if datasets is not None else 0
         sv3_count = np.sum(datasets == 'shareveo3') if datasets is not None else 0
         title += f' ({avd_count:,} AVDeepfake, {sv3_count:,} ShareVeo3)'
     else:
-        title += ' colored by audio label'
+        title += f' colored by {label_name} label'
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.grid(alpha=0.3)
     

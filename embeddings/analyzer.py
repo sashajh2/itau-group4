@@ -428,7 +428,11 @@ class DeepfakeEmbeddingAnalyzer:
                 
                 for timestamp_idx in range(num_segments):
                     embeddings = video_data['embeddings'][:, timestamp_idx, :]  # [num_augs, emb_dim]
-                    labels = video_data['labels']['audio'][:, timestamp_idx]  # [num_augs]
+                    # Use video labels for video embeddings (senet), audio labels for audio embeddings (hubert, openl3)
+                    if self.embedding_type == 'senet':
+                        labels = video_data['labels']['video'][:, timestamp_idx]  # [num_augs]
+                    else:
+                        labels = video_data['labels']['audio'][:, timestamp_idx]  # [num_augs]
                     
                     # Skip if all same label (no variation)
                     if len(np.unique(labels)) < 2:
@@ -571,7 +575,11 @@ class DeepfakeEmbeddingAnalyzer:
                             continue
                         emb = f[f'videos/{safe_id}/embeddings/{self.use_projection}'][:]
                     
-                    labels = f[f'videos/{safe_id}/labels/audio'][:]
+                    # Use video labels for video embeddings (senet), audio labels for audio embeddings (hubert, openl3)
+                    if self.embedding_type == 'senet':
+                        labels = f[f'videos/{safe_id}/labels/video'][:]
+                    else:
+                        labels = f[f'videos/{safe_id}/labels/audio'][:]
                     
                     # Get dataset source
                     dataset = f[f'videos/{safe_id}'].attrs.get('dataset', 'avdeepfake1m')
@@ -700,8 +708,11 @@ class DeepfakeEmbeddingAnalyzer:
         
         # Create visualization
         from embeddings.visualization import plot_global_pca
+        # Determine label type for display
+        label_type = 'video' if self.embedding_type == 'senet' else 'audio'
         fig = plot_global_pca(embeddings_pca, all_labels, self.embedding_type, 
-                             datasets=all_datasets if color_by_dataset else None)
+                             datasets=all_datasets if color_by_dataset else None,
+                             label_type=label_type)
         
         if save_fig:
             fig.savefig(save_fig, dpi=300, bbox_inches='tight')

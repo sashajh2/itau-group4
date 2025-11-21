@@ -1,0 +1,16 @@
+{
+  "num_real_samples": 4655,
+  "num_fake_samples": 6046,
+  "mean_cos_sim_real_to_source": 0.9976,
+  "std_cos_sim_real_to_source": 0.0101,
+  "mean_cos_sim_fake_to_source": 0.9922,
+  "std_cos_sim_fake_to_source": 0.0118,
+  "difference_real_vs_fake": 0.0054,
+  "mean_cos_distance_real_fake_centroids": 0.0052,
+  "std_cos_distance_real_fake_centroids": 0.0024,
+  "num_timestamps_with_both_labels": 701,
+  "overall_linear_separability": 0.8211,
+  "num_videos_analyzed": 238,
+  "include_shareveo3": false
+}
+
