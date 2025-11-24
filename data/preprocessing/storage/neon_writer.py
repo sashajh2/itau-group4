@@ -250,9 +250,9 @@ class NeonEmbeddingWriter:
             )
             self.conn.commit()
             print(f"  ↳ Flushed {num_to_flush} embeddings to {table}")
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+        except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.DatabaseError) as e:
             error_str = str(e).lower()
-            if retry and ("connection" in error_str or "ssl" in error_str or "cursor" in error_str or "closed" in error_str):
+            if retry and ("connection" in error_str or "ssl" in error_str or "cursor" in error_str or "closed" in error_str or "server" in error_str):
                 print(f"  ↳ Connection error flushing {num_to_flush} embeddings to {table}: {e}")
                 print(f"  ↳ Retrying with reconnection...")
                 self._reconnect()
