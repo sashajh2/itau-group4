@@ -11,7 +11,7 @@ import os
 import json
 import math
 
-from training.disentangled.losses import compute_total_loss, AdaptiveLossScaler
+from training.disentangled.losses import compute_total_loss, AdaptiveLossScaler, EqualWeightNormalizer
 from training.disentangled.model import DisentangledProjector
 from training.disentangled.metrics import evaluate_embeddings
 
@@ -26,7 +26,9 @@ def train_epoch(
     temperature: float = 0.1,
     min_variance: float = 0.01,
     variance_reg_weight: float = 0.1,
+    min_orth: float = 0.001,
     adaptive_scaler: Optional[AdaptiveLossScaler] = None,
+    equal_weight_normalizer: Optional[EqualWeightNormalizer] = None,
     scheduler: Optional[LambdaLR] = None,
     gradient_clip: float = 1.0,
 ) -> Dict[str, float]:
@@ -73,7 +75,9 @@ def train_epoch(
             temperature=temperature,
             min_variance=min_variance,
             variance_reg_weight=variance_reg_weight,
+            min_orth=min_orth,
             adaptive_scaler=adaptive_scaler,
+            equal_weight_normalizer=equal_weight_normalizer,
         )
         
         # Backward pass
@@ -112,7 +116,9 @@ def validate_epoch(
     temperature: float = 0.1,
     min_variance: float = 0.01,
     variance_reg_weight: float = 0.1,
+    min_orth: float = 0.001,
     adaptive_scaler: Optional[AdaptiveLossScaler] = None,
+    equal_weight_normalizer: Optional[EqualWeightNormalizer] = None,
 ) -> Dict[str, float]:
     """
     Validate for one epoch.
@@ -152,10 +158,12 @@ def validate_epoch(
                 lambda_var=lambda_var,
                 lambda_orth=lambda_orth,
                 temperature=temperature,
-                min_variance=min_variance,
-                variance_reg_weight=variance_reg_weight,
-                adaptive_scaler=adaptive_scaler,
-            )
+            min_variance=min_variance,
+            variance_reg_weight=variance_reg_weight,
+            min_orth=min_orth,
+            adaptive_scaler=adaptive_scaler,
+            equal_weight_normalizer=equal_weight_normalizer,
+        )
             
             for key in epoch_losses:
                 epoch_losses[key] += losses_dict[key]
@@ -182,7 +190,10 @@ def train(
     temperature: float = 0.1,
     min_variance: float = 0.01,
     variance_reg_weight: float = 0.1,
-    use_adaptive_scaling: bool = True,
+    min_orth: float = 0.001,
+    use_adaptive_scaling: bool = False,
+    use_equal_weight_normalization: bool = True,
+    min_loss_ratio: float = 0.1,
     use_warmup: bool = True,
     warmup_steps: int = 1000,
     weight_decay: float = 1e-5,
@@ -229,10 +240,23 @@ def train(
     else:
         scheduler = None
     
-    # Initialize adaptive loss scaler if enabled
-    adaptive_scaler = AdaptiveLossScaler(alpha=0.99, warmup_steps=warmup_steps) if use_adaptive_scaling else None
-    if adaptive_scaler:
-        print("📊 Using adaptive loss scaling")
+    # Initialize loss balancing
+    if use_equal_weight_normalization:
+        equal_weight_normalizer = EqualWeightNormalizer()
+        adaptive_scaler = None
+        print("⚖️  Using equal-weight normalization (normalize by initial values, then equal weights)")
+    elif use_adaptive_scaling:
+        adaptive_scaler = AdaptiveLossScaler(
+            alpha=0.99, 
+            warmup_steps=warmup_steps,
+            min_loss_ratio=min_loss_ratio
+        )
+        equal_weight_normalizer = None
+        print(f"📊 Using adaptive loss scaling (min_loss_ratio={min_loss_ratio})")
+    else:
+        adaptive_scaler = None
+        equal_weight_normalizer = None
+        print("⚠️  Using fixed loss weights (no balancing)")
     
     # Track metrics over time
     metrics_history = {
@@ -312,6 +336,7 @@ def train(
             temperature=temperature,
             min_variance=min_variance,
             variance_reg_weight=variance_reg_weight,
+            min_orth=min_orth,
             adaptive_scaler=adaptive_scaler,
         )
         loss_str = f"Val   - Total: {val_losses['total']:.4f}, "

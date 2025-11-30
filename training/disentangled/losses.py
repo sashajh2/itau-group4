@@ -10,7 +10,7 @@ Implements:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 
 
 def variance_loss(z_auth: torch.Tensor, is_real: torch.Tensor, 
@@ -110,13 +110,15 @@ def prototypical_contrastive_loss(
     return loss
 
 
-def orthogonality_loss(z_id: torch.Tensor, z_auth: torch.Tensor) -> torch.Tensor:
+def orthogonality_loss(z_id: torch.Tensor, z_auth: torch.Tensor, min_orth: float = 0.001) -> torch.Tensor:
     """
     Penalize correlation between identity and authenticity embeddings (Equation 3.3).
+    Includes minimum threshold to prevent collapse.
     
     Args:
         z_id: Identity embeddings, shape [batch_size, emb_dim]
         z_auth: Authenticity embeddings, shape [batch_size, emb_dim]
+        min_orth: Minimum orthogonality loss value to prevent collapse
     
     Returns:
         scalar loss
@@ -132,6 +134,10 @@ def orthogonality_loss(z_id: torch.Tensor, z_auth: torch.Tensor) -> torch.Tensor
     # L_orth = (1/N^2) * sum_{i,j} |sim(z_i^id, z_j^auth)|
     loss = sim_matrix.abs().sum() / (batch_size ** 2)
     
+    # Prevent collapse: ensure minimum orthogonality loss
+    # This ensures the model maintains some separation between z_id and z_auth
+    loss = torch.clamp(loss, min=min_orth)
+    
     return loss
 
 
@@ -139,33 +145,46 @@ class AdaptiveLossScaler:
     """
     Adaptive loss scaler using exponential moving average.
     Normalizes losses to similar magnitudes before weighting.
+    Prevents collapse by maintaining minimum loss contributions.
     """
-    def __init__(self, alpha: float = 0.99, initial_scale: float = 1.0, warmup_steps: int = 100):
+    def __init__(self, alpha: float = 0.99, initial_scale: float = 1.0, warmup_steps: int = 100,
+                 min_loss_ratio: float = 0.1):
         """
         Args:
             alpha: Smoothing factor for exponential moving average (0.99 = very smooth)
             initial_scale: Initial scaling factor for each loss
             warmup_steps: Number of steps to use smaller alpha for faster adaptation
+            min_loss_ratio: Minimum ratio of each loss to max loss (prevents collapse)
         """
         self.alpha = alpha
         self.alpha_warmup = 0.9  # Faster adaptation during warmup
         self.warmup_steps = warmup_steps
+        self.min_loss_ratio = min_loss_ratio
         self.running_means = {
             'proto': initial_scale,
             'var': initial_scale,
             'orth': initial_scale,
         }
+        self.initial_losses = {}  # Track initial loss values for normalization
         self.step_count = 0
     
     def scale_losses(self, L_proto: torch.Tensor, L_var: torch.Tensor, 
                      L_orth: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Scale losses based on running averages.
+        Scale losses based on running averages with collapse prevention.
         
         Returns:
             Scaled losses (L_proto_scaled, L_var_scaled, L_orth_scaled)
         """
         self.step_count += 1
+        
+        # Store initial losses for normalization
+        if self.step_count == 1:
+            self.initial_losses = {
+                'proto': L_proto.item(),
+                'var': L_var.item(),
+                'orth': L_orth.item(),
+            }
         
         # Use faster adaptation during warmup
         current_alpha = self.alpha_warmup if self.step_count < self.warmup_steps else self.alpha
@@ -190,11 +209,19 @@ class AdaptiveLossScaler:
         )
         
         # Normalize by running averages (so each loss has similar magnitude)
-        # Add small epsilon to prevent division by zero
         eps = 1e-8
         L_proto_scaled = L_proto / (self.running_means['proto'] + eps)
         L_var_scaled = L_var / (self.running_means['var'] + eps)
         L_orth_scaled = L_orth / (self.running_means['orth'] + eps)
+        
+        # Prevent collapse: ensure each loss contributes at least min_loss_ratio of max loss
+        max_scaled = max(L_proto_scaled.item(), L_var_scaled.item(), L_orth_scaled.item())
+        min_allowed = max_scaled * self.min_loss_ratio
+        
+        # Clamp losses to minimum contribution
+        L_proto_scaled = torch.clamp(L_proto_scaled, min=min_allowed)
+        L_var_scaled = torch.clamp(L_var_scaled, min=min_allowed)
+        L_orth_scaled = torch.clamp(L_orth_scaled, min=min_allowed)
         
         return L_proto_scaled, L_var_scaled, L_orth_scaled
     
@@ -208,6 +235,162 @@ class AdaptiveLossScaler:
         }
 
 
+class GradientBalancer:
+    """
+    Gradient balancing (GradNorm-style) to automatically balance loss contributions.
+    Instead of weighting losses, we balance their gradient magnitudes.
+    This ensures all losses contribute equally to learning.
+    """
+    def __init__(self, alpha: float = 0.16, initial_weights: Optional[Dict[str, float]] = None):
+        """
+        Args:
+            alpha: Restoring force hyperparameter (0.16 is standard from GradNorm paper)
+            initial_weights: Initial weights for each loss (default: equal weights)
+        """
+        self.alpha = alpha
+        self.initial_weights = initial_weights or {'proto': 1.0, 'var': 1.0, 'orth': 1.0}
+        self.weights = self.initial_weights.copy()
+        self.initial_losses = {}
+        self.running_grad_norms = {'proto': 1.0, 'var': 1.0, 'orth': 1.0}
+        self.step_count = 0
+    
+    def compute_balanced_losses(
+        self,
+        L_proto: torch.Tensor,
+        L_var: torch.Tensor,
+        L_orth: torch.Tensor,
+        model: torch.nn.Module,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, float]]:
+        """
+        Compute balanced losses using gradient balancing.
+        
+        Args:
+            L_proto: Prototypical loss
+            L_var: Variance loss
+            L_orth: Orthogonality loss
+            model: Model to compute gradients for
+        
+        Returns:
+            (L_proto_balanced, L_var_balanced, L_orth_balanced, weights_dict)
+        """
+        self.step_count += 1
+        
+        # Store initial losses (first step only)
+        if self.step_count == 1:
+            self.initial_losses = {
+                'proto': L_proto.item(),
+                'var': L_var.item(),
+                'orth': L_orth.item(),
+            }
+        
+        # Compute weighted losses
+        L_proto_weighted = self.weights['proto'] * L_proto
+        L_var_weighted = self.weights['var'] * L_var
+        L_orth_weighted = self.weights['orth'] * L_orth
+        
+        # Compute gradients for each loss (without creating graph to avoid double backward)
+        # We compute gradients separately, then use them to balance weights
+        grad_proto = torch.autograd.grad(
+            L_proto_weighted, model.parameters(), retain_graph=True, create_graph=False
+        )
+        grad_var = torch.autograd.grad(
+            L_var_weighted, model.parameters(), retain_graph=True, create_graph=False
+        )
+        grad_orth = torch.autograd.grad(
+            L_orth_weighted, model.parameters(), retain_graph=False, create_graph=False
+        )
+        
+        # Compute gradient norms
+        grad_norm_proto = torch.norm(torch.cat([g.flatten() for g in grad_proto]))
+        grad_norm_var = torch.norm(torch.cat([g.flatten() for g in grad_var]))
+        grad_norm_orth = torch.norm(torch.cat([g.flatten() for g in grad_orth]))
+        
+        # Update running averages
+        self.running_grad_norms['proto'] = 0.99 * self.running_grad_norms['proto'] + 0.01 * grad_norm_proto.item()
+        self.running_grad_norms['var'] = 0.99 * self.running_grad_norms['var'] + 0.01 * grad_norm_var.item()
+        self.running_grad_norms['orth'] = 0.99 * self.running_grad_norms['orth'] + 0.01 * grad_norm_orth.item()
+        
+        # Compute relative inverse training rates (how fast each loss is decreasing)
+        if self.step_count > 1:
+            # Normalize by initial loss values
+            rel_rate_proto = L_proto.item() / (self.initial_losses['proto'] + 1e-8)
+            rel_rate_var = L_var.item() / (self.initial_losses['var'] + 1e-8)
+            rel_rate_orth = L_orth.item() / (self.initial_losses['orth'] + 1e-8)
+            
+            # Average relative rate (target for all losses)
+            avg_rel_rate = (rel_rate_proto + rel_rate_var + rel_rate_orth) / 3.0
+            
+            # Target gradient norms (proportional to relative rates)
+            target_norm_proto = self.running_grad_norms['proto'] * (rel_rate_proto / avg_rel_rate) ** self.alpha
+            target_norm_var = self.running_grad_norms['var'] * (rel_rate_var / avg_rel_rate) ** self.alpha
+            target_norm_orth = self.running_grad_norms['orth'] * (rel_rate_orth / avg_rel_rate) ** self.alpha
+            
+            # Update weights to match target norms
+            # w_i = w_i * (target_norm_i / current_norm_i)
+            self.weights['proto'] = self.weights['proto'] * (target_norm_proto / (grad_norm_proto.item() + 1e-8))
+            self.weights['var'] = self.weights['var'] * (target_norm_var / (grad_norm_var.item() + 1e-8))
+            self.weights['orth'] = self.weights['orth'] * (target_norm_orth / (grad_norm_orth.item() + 1e-8))
+            
+            # Clamp weights to reasonable range
+            self.weights['proto'] = max(0.1, min(10.0, self.weights['proto']))
+            self.weights['var'] = max(0.1, min(10.0, self.weights['var']))
+            self.weights['orth'] = max(0.1, min(10.0, self.weights['orth']))
+        
+        # Return balanced losses
+        return (
+            self.weights['proto'] * L_proto,
+            self.weights['var'] * L_var,
+            self.weights['orth'] * L_orth,
+            self.weights.copy()
+        )
+
+
+class EqualWeightNormalizer:
+    """
+    Simple loss normalizer: normalize each loss by its initial value, then use equal weights.
+    This ensures all losses start at similar scales and contribute equally.
+    """
+    def __init__(self):
+        self.initial_losses = {}
+        self.step_count = 0
+    
+    def normalize_losses(
+        self,
+        L_proto: torch.Tensor,
+        L_var: torch.Tensor,
+        L_orth: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, float]]:
+        """
+        Normalize losses by their initial values.
+        
+        Returns:
+            (L_proto_norm, L_var_norm, L_orth_norm, scales_dict)
+        """
+        self.step_count += 1
+        
+        # Store initial losses (first step only)
+        if self.step_count == 1:
+            self.initial_losses = {
+                'proto': L_proto.item(),
+                'var': L_var.item(),
+                'orth': L_orth.item(),
+            }
+        
+        # Normalize by initial values (so all start at ~1.0)
+        eps = 1e-8
+        L_proto_norm = L_proto / (self.initial_losses['proto'] + eps)
+        L_var_norm = L_var / (self.initial_losses['var'] + eps)
+        L_orth_norm = L_orth / (self.initial_losses['orth'] + eps)
+        
+        scales = {
+            'proto': 1.0 / (self.initial_losses['proto'] + eps),
+            'var': 1.0 / (self.initial_losses['var'] + eps),
+            'orth': 1.0 / (self.initial_losses['orth'] + eps),
+        }
+        
+        return L_proto_norm, L_var_norm, L_orth_norm, scales
+
+
 def compute_total_loss(
     z_id: torch.Tensor,
     z_auth: torch.Tensor,
@@ -218,7 +401,9 @@ def compute_total_loss(
     temperature: float = 0.1,
     min_variance: float = 0.01,
     variance_reg_weight: float = 0.1,
+    min_orth: float = 0.001,
     adaptive_scaler: Optional[AdaptiveLossScaler] = None,
+    equal_weight_normalizer: Optional[EqualWeightNormalizer] = None,
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
     """
     Combine all three loss components (Equation 3.7).
@@ -243,10 +428,34 @@ def compute_total_loss(
     L_proto = prototypical_contrastive_loss(z_id, content_groups, temperature=temperature)
     L_var = variance_loss(z_auth, is_real, min_variance=min_variance, 
                          regularization_weight=variance_reg_weight)
-    L_orth = orthogonality_loss(z_id, z_auth)
+    L_orth = orthogonality_loss(z_id, z_auth, min_orth=min_orth)
+    
+    # Apply equal-weight normalization if provided (simplest approach)
+    if equal_weight_normalizer is not None:
+        L_proto_norm, L_var_norm, L_orth_norm, scales = equal_weight_normalizer.normalize_losses(
+            L_proto, L_var, L_orth
+        )
+        
+        # Total loss: equal weights (1.0 each) after normalization
+        total_loss = L_proto_norm + L_var_norm + L_orth_norm
+        
+        losses_dict = {
+            'total': total_loss.item(),
+            'proto': L_proto.item(),
+            'var': L_var.item(),
+            'orth': L_orth.item(),
+            'proto_norm': L_proto_norm.item(),
+            'var_norm': L_var_norm.item(),
+            'orth_norm': L_orth_norm.item(),
+            'scale_proto': scales['proto'],
+            'scale_var': scales['var'],
+            'scale_orth': scales['orth'],
+        }
+        
+        return total_loss, losses_dict
     
     # Apply adaptive scaling if provided
-    if adaptive_scaler is not None:
+    elif adaptive_scaler is not None:
         L_proto_scaled, L_var_scaled, L_orth_scaled = adaptive_scaler.scale_losses(
             L_proto, L_var, L_orth
         )

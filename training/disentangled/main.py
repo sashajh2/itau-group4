@@ -81,11 +81,19 @@ def main():
                        help='Minimum variance threshold for regularization (default: 0.01)')
     parser.add_argument('--variance-reg-weight', type=float, default=0.1,
                        help='Weight for variance regularization term (default: 0.1)')
+    parser.add_argument('--min-orth', type=float, default=0.001,
+                       help='Minimum orthogonality loss value to prevent collapse (default: 0.001)')
+    parser.add_argument('--use-equal-weight-normalization', action='store_true', default=True,
+                       help='Use equal-weight normalization (normalize by initial values, default: True)')
+    parser.add_argument('--no-equal-weight-normalization', dest='use_equal_weight_normalization', action='store_false',
+                       help='Disable equal-weight normalization')
     parser.add_argument('--use-adaptive-scaling', action='store_true',
-                       help='Use adaptive loss scaling (default: True)')
+                       help='Use adaptive loss scaling (alternative to equal-weight normalization)')
     parser.add_argument('--no-adaptive-scaling', dest='use_adaptive_scaling', action='store_false',
                        help='Disable adaptive loss scaling')
-    parser.set_defaults(use_adaptive_scaling=True)
+    parser.set_defaults(use_adaptive_scaling=False, use_equal_weight_normalization=True)
+    parser.add_argument('--min-loss-ratio', type=float, default=0.1,
+                       help='Minimum ratio of each loss to max loss (prevents collapse, default: 0.1)')
     
     # Other arguments
     parser.add_argument('--device', type=str, default=None,
@@ -210,7 +218,10 @@ def main():
         temperature=args.temperature,
         min_variance=args.min_variance,
         variance_reg_weight=args.variance_reg_weight,
+        min_orth=args.min_orth,
         use_adaptive_scaling=args.use_adaptive_scaling,
+        use_equal_weight_normalization=args.use_equal_weight_normalization,
+        min_loss_ratio=args.min_loss_ratio,
         use_warmup=args.use_warmup,
         warmup_steps=args.warmup_steps,
         weight_decay=args.weight_decay,
