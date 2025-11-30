@@ -2,14 +2,16 @@
 Training and validation loops for disentangled representation learning.
 """
 import torch
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
+from torch.optim.lr_scheduler import LambdaLR, CosineAnnealingLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from typing import Dict
+from typing import Dict, Optional
 import os
 import json
+import math
 
-from training.disentangled.losses import compute_total_loss
+from training.disentangled.losses import compute_total_loss, AdaptiveLossScaler
 from training.disentangled.model import DisentangledProjector
 from training.disentangled.metrics import evaluate_embeddings
 
@@ -22,6 +24,11 @@ def train_epoch(
     lambda_var: float = 0.5,
     lambda_orth: float = 0.1,
     temperature: float = 0.1,
+    min_variance: float = 0.01,
+    variance_reg_weight: float = 0.1,
+    adaptive_scaler: Optional[AdaptiveLossScaler] = None,
+    scheduler: Optional[LambdaLR] = None,
+    gradient_clip: float = 1.0,
 ) -> Dict[str, float]:
     """
     Train for one epoch.
@@ -64,12 +71,24 @@ def train_epoch(
             lambda_var=lambda_var,
             lambda_orth=lambda_orth,
             temperature=temperature,
+            min_variance=min_variance,
+            variance_reg_weight=variance_reg_weight,
+            adaptive_scaler=adaptive_scaler,
         )
         
         # Backward pass
         optimizer.zero_grad()
         total_loss.backward()
+        
+        # Gradient clipping to prevent exploding gradients
+        if gradient_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=gradient_clip)
+        
         optimizer.step()
+        
+        # Update learning rate scheduler (for warmup) - step per batch
+        if scheduler is not None:
+            scheduler.step()
         
         # Accumulate losses
         for key in epoch_losses:
@@ -91,6 +110,9 @@ def validate_epoch(
     lambda_var: float = 0.5,
     lambda_orth: float = 0.1,
     temperature: float = 0.1,
+    min_variance: float = 0.01,
+    variance_reg_weight: float = 0.1,
+    adaptive_scaler: Optional[AdaptiveLossScaler] = None,
 ) -> Dict[str, float]:
     """
     Validate for one epoch.
@@ -130,6 +152,9 @@ def validate_epoch(
                 lambda_var=lambda_var,
                 lambda_orth=lambda_orth,
                 temperature=temperature,
+                min_variance=min_variance,
+                variance_reg_weight=variance_reg_weight,
+                adaptive_scaler=adaptive_scaler,
             )
             
             for key in epoch_losses:
@@ -155,6 +180,14 @@ def train(
     lambda_var: float = 0.5,
     lambda_orth: float = 0.1,
     temperature: float = 0.1,
+    min_variance: float = 0.01,
+    variance_reg_weight: float = 0.1,
+    use_adaptive_scaling: bool = True,
+    use_warmup: bool = True,
+    warmup_steps: int = 1000,
+    weight_decay: float = 1e-5,
+    use_adamw: bool = True,
+    gradient_clip: float = 1.0,
 ) -> None:
     """
     Full training loop.
@@ -174,7 +207,32 @@ def train(
     os.makedirs(save_dir, exist_ok=True)
     
     model = model.to(device)
-    optimizer = Adam(model.parameters(), lr=lr)
+    
+    # Use AdamW with weight decay for better generalization
+    if use_adamw:
+        optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        print(f"🔧 Using AdamW optimizer (weight_decay={weight_decay})")
+    else:
+        optimizer = Adam(model.parameters(), lr=lr)
+        print(f"🔧 Using Adam optimizer")
+    
+    # Learning rate warmup scheduler
+    if use_warmup:
+        def lr_lambda(step):
+            if step < warmup_steps:
+                return step / warmup_steps  # Linear warmup
+            else:
+                return 1.0  # Constant after warmup
+        
+        scheduler = LambdaLR(optimizer, lr_lambda)
+        print(f"📈 Using learning rate warmup ({warmup_steps} steps)")
+    else:
+        scheduler = None
+    
+    # Initialize adaptive loss scaler if enabled
+    adaptive_scaler = AdaptiveLossScaler(alpha=0.99, warmup_steps=warmup_steps) if use_adaptive_scaling else None
+    if adaptive_scaler:
+        print("📊 Using adaptive loss scaling")
     
     # Track metrics over time
     metrics_history = {
@@ -225,11 +283,26 @@ def train(
             lambda_var=lambda_var,
             lambda_orth=lambda_orth,
             temperature=temperature,
+            min_variance=min_variance,
+            variance_reg_weight=variance_reg_weight,
+            adaptive_scaler=adaptive_scaler,
+            scheduler=scheduler,
+            gradient_clip=gradient_clip,
         )
-        print(f"Train - Total: {train_losses['total']:.4f}, "
-              f"Proto: {train_losses['proto']:.4f}, "
-              f"Var: {train_losses['var']:.4f}, "
-              f"Orth: {train_losses['orth']:.4f}")
+        
+        # Print current learning rate
+        current_lr = optimizer.param_groups[0]['lr']
+        if scheduler is not None:
+            print(f"   Current LR: {current_lr:.2e}")
+        loss_str = f"Train - Total: {train_losses['total']:.4f}, "
+        loss_str += f"Proto: {train_losses['proto']:.4f}, "
+        loss_str += f"Var: {train_losses['var']:.4f}, "
+        loss_str += f"Orth: {train_losses['orth']:.4f}"
+        if 'proto_scaled' in train_losses:
+            loss_str += f"\n        Scaled - Proto: {train_losses['proto_scaled']:.4f}, "
+            loss_str += f"Var: {train_losses['var_scaled']:.4f}, "
+            loss_str += f"Orth: {train_losses['orth_scaled']:.4f}"
+        print(loss_str)
         
         # Validate
         val_losses = validate_epoch(
@@ -237,11 +310,19 @@ def train(
             lambda_var=lambda_var,
             lambda_orth=lambda_orth,
             temperature=temperature,
+            min_variance=min_variance,
+            variance_reg_weight=variance_reg_weight,
+            adaptive_scaler=adaptive_scaler,
         )
-        print(f"Val   - Total: {val_losses['total']:.4f}, "
-              f"Proto: {val_losses['proto']:.4f}, "
-              f"Var: {val_losses['var']:.4f}, "
-              f"Orth: {val_losses['orth']:.4f}")
+        loss_str = f"Val   - Total: {val_losses['total']:.4f}, "
+        loss_str += f"Proto: {val_losses['proto']:.4f}, "
+        loss_str += f"Var: {val_losses['var']:.4f}, "
+        loss_str += f"Orth: {val_losses['orth']:.4f}"
+        if 'proto_scaled' in val_losses:
+            loss_str += f"\n        Scaled - Proto: {val_losses['proto_scaled']:.4f}, "
+            loss_str += f"Var: {val_losses['var_scaled']:.4f}, "
+            loss_str += f"Orth: {val_losses['orth_scaled']:.4f}"
+        print(loss_str)
         
         # ============================================================
         # EVALUATE AFTER EPOCH (z^auth embeddings)

@@ -21,22 +21,50 @@ class DisentangledProjector(nn.Module):
         output_dim: Dimension of projected embeddings (default: 128)
     """
     
-    def __init__(self, input_dim: int = 768, output_dim: int = 128):
+    def __init__(self, input_dim: int = 768, output_dim: int = 128, use_bn: bool = False):
         super().__init__()
         
         # Authenticity projection head (2-layer MLP with ReLU)
-        self.f_auth = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, output_dim)
-        )
+        if use_bn:
+            self.f_auth = nn.Sequential(
+                nn.Linear(input_dim, 256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256, output_dim)
+            )
+        else:
+            self.f_auth = nn.Sequential(
+                nn.Linear(input_dim, 256),
+                nn.ReLU(),
+                nn.Linear(256, output_dim)
+            )
         
         # Identity projection head (2-layer MLP with ReLU)
-        self.f_id = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, output_dim)
-        )
+        if use_bn:
+            self.f_id = nn.Sequential(
+                nn.Linear(input_dim, 256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Linear(256, output_dim)
+            )
+        else:
+            self.f_id = nn.Sequential(
+                nn.Linear(input_dim, 256),
+                nn.ReLU(),
+                nn.Linear(256, output_dim)
+            )
+        
+        # Initialize weights properly
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Initialize weights using Xavier/Kaiming initialization."""
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                # Use Kaiming initialization for ReLU activations
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0.0)
     
     def forward(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """

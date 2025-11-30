@@ -77,6 +77,15 @@ def main():
                        help='Weight for orthogonality loss (default: 0.1)')
     parser.add_argument('--temperature', type=float, default=0.1,
                        help='Temperature for prototypical loss (default: 0.1)')
+    parser.add_argument('--min-variance', type=float, default=0.01,
+                       help='Minimum variance threshold for regularization (default: 0.01)')
+    parser.add_argument('--variance-reg-weight', type=float, default=0.1,
+                       help='Weight for variance regularization term (default: 0.1)')
+    parser.add_argument('--use-adaptive-scaling', action='store_true',
+                       help='Use adaptive loss scaling (default: True)')
+    parser.add_argument('--no-adaptive-scaling', dest='use_adaptive_scaling', action='store_false',
+                       help='Disable adaptive loss scaling')
+    parser.set_defaults(use_adaptive_scaling=True)
     
     # Other arguments
     parser.add_argument('--device', type=str, default=None,
@@ -85,6 +94,26 @@ def main():
                        help='Directory to save checkpoints (default: ./checkpoints/disentangled)')
     parser.add_argument('--val-split', type=float, default=0.1,
                        help='Validation split ratio (default: 0.1)')
+    parser.add_argument('--min-samples-per-group', type=int, default=3,
+                       help='Minimum samples per content group to include (default: 3)')
+    
+    # Training improvements
+    parser.add_argument('--use-warmup', action='store_true', default=True,
+                       help='Use learning rate warmup (default: True)')
+    parser.add_argument('--no-warmup', dest='use_warmup', action='store_false',
+                       help='Disable learning rate warmup')
+    parser.add_argument('--warmup-steps', type=int, default=1000,
+                       help='Number of warmup steps (default: 1000)')
+    parser.add_argument('--weight-decay', type=float, default=1e-5,
+                       help='Weight decay for AdamW (default: 1e-5)')
+    parser.add_argument('--use-adamw', action='store_true', default=True,
+                       help='Use AdamW optimizer (default: True)')
+    parser.add_argument('--use-adam', dest='use_adamw', action='store_false',
+                       help='Use Adam optimizer instead of AdamW')
+    parser.add_argument('--gradient-clip', type=float, default=1.0,
+                       help='Gradient clipping max norm (default: 1.0, set to 0 to disable)')
+    parser.add_argument('--use-bn', action='store_true',
+                       help='Use batch normalization in projection heads')
     
     args = parser.parse_args()
     
@@ -108,13 +137,21 @@ def main():
     print(f"  Lambda var: {args.lambda_var}")
     print(f"  Lambda orth: {args.lambda_orth}")
     print(f"  Temperature: {args.temperature}")
+    print(f"  Min variance: {args.min_variance}")
+    print(f"  Variance reg weight: {args.variance_reg_weight}")
+    print(f"  Adaptive scaling: {args.use_adaptive_scaling}")
+    print(f"  Min samples per group: {args.min_samples_per_group}")
     print(f"  Device: {device}")
     print(f"  Save dir: {args.save_dir}")
     print(f"{'='*60}\n")
     
     # Create full dataset
     print("📂 Loading dataset...")
-    full_dataset = DisentanglementDataset(args.hdf5_path, args.encoder_name)
+    full_dataset = DisentanglementDataset(
+        args.hdf5_path, 
+        args.encoder_name,
+        min_samples_per_group=args.min_samples_per_group
+    )
     
     # Split into train/val
     val_size = int(args.val_split * len(full_dataset))
@@ -150,7 +187,8 @@ def main():
     print("🏗️  Creating model...")
     model = DisentangledProjector(
         input_dim=args.input_dim,
-        output_dim=args.output_dim
+        output_dim=args.output_dim,
+        use_bn=args.use_bn
     )
     
     num_params = sum(p.numel() for p in model.parameters())
@@ -170,6 +208,14 @@ def main():
         lambda_var=args.lambda_var,
         lambda_orth=args.lambda_orth,
         temperature=args.temperature,
+        min_variance=args.min_variance,
+        variance_reg_weight=args.variance_reg_weight,
+        use_adaptive_scaling=args.use_adaptive_scaling,
+        use_warmup=args.use_warmup,
+        warmup_steps=args.warmup_steps,
+        weight_decay=args.weight_decay,
+        use_adamw=args.use_adamw,
+        gradient_clip=args.gradient_clip,
     )
 
 
