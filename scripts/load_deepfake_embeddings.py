@@ -6,6 +6,7 @@ This script:
 1. Queries segments and embeddings from Neon Postgres
    - AVDeepfake1M: filtered by created_at >= filter (default: '2025-11-01 00:00:00')
    - ShareVeo3: filtered by source = 'ShareVeo3' (optional, use --include-shareveo3)
+   - Sora2: filtered by source = 'Sora2' (optional, use --include-sora2)
 2. Groups data hierarchically by video_id and augmentations
 3. Identifies source videos and classifies augmentation types
 4. Saves structured data as HDF5 for efficient storage and partial loading
@@ -16,6 +17,9 @@ Usage:
     
     # Load both AVDeepfake1M and ShareVeo3
     python scripts/load_deepfake_embeddings.py --created-at-filter '2025-11-01 00:00:00' --include-shareveo3
+    
+    # Load Sora2 dataset
+    python scripts/load_deepfake_embeddings.py --include-sora2 --output exports/sora2_embeddings.h5
 """
 
 import argparse
@@ -88,6 +92,11 @@ def main():
         help="Also load ShareVeo3 dataset (filtered by source='ShareVeo3')",
     )
     parser.add_argument(
+        "--include-sora2",
+        action="store_true",
+        help="Also load Sora2 dataset (filtered by source='Sora2')",
+    )
+    parser.add_argument(
         "--exclude-incomplete-augmentations",
         action="store_true",
         help="Exclude entire augmentations if any segment is missing embeddings (default: only exclude incomplete segments)",
@@ -95,9 +104,12 @@ def main():
     args = parser.parse_args()
     
     print(f"📊 Loading deepfake embeddings from Neon")
-    print(f"   AVDeepfake1M filter: created_at >= {args.created_at_filter}")
+    if not args.include_sora2:
+        print(f"   AVDeepfake1M filter: created_at >= {args.created_at_filter}")
     if args.include_shareveo3:
         print(f"   ShareVeo3 filter: source = 'ShareVeo3'")
+    if args.include_sora2:
+        print(f"   Sora2 filter: source = 'Sora2'")
     print(f"   Output: {args.output}")
     print(f"   Embedding filter: Only segments with all 3 embeddings (openl3, hubert, senet)")
     if args.exclude_incomplete_augmentations:
@@ -118,18 +130,20 @@ def main():
     conn = connect_neon()
     
     try:
-        # Get all video_ids for AVDeepfake1M
-        # Only include videos that have segments with all 3 embeddings
-        # Filter: source = 'AVDeepfake1M' AND created_at >= filter_date
-        print(f"\n📥 Fetching AVDeepfake1M video_ids (with all 3 embeddings)...")
-        print(f"   Filter: source = 'AVDeepfake1M' AND created_at >= {args.created_at_filter}")
-        avd_video_ids = get_all_video_ids(
-            conn, 
-            created_at_filter=args.created_at_filter,
-            source="AVDeepfake1M",
-            require_all_embeddings=True
-        )
-        print(f"   Found {len(avd_video_ids)} unique video_ids with all embeddings")
+        # Get all video_ids for AVDeepfake1M (only if not loading Sora2 exclusively)
+        avd_video_ids = []
+        if not args.include_sora2:
+            # Only include videos that have segments with all 3 embeddings
+            # Filter: source = 'AVDeepfake1M' AND created_at >= filter_date
+            print(f"\n📥 Fetching AVDeepfake1M video_ids (with all 3 embeddings)...")
+            print(f"   Filter: source = 'AVDeepfake1M' AND created_at >= {args.created_at_filter}")
+            avd_video_ids = get_all_video_ids(
+                conn, 
+                created_at_filter=args.created_at_filter,
+                source="AVDeepfake1M",
+                require_all_embeddings=True
+            )
+            print(f"   Found {len(avd_video_ids)} unique video_ids with all embeddings")
         
         # Get all video_ids for ShareVeo3 (if requested)
         sv3_video_ids = []
@@ -141,6 +155,17 @@ def main():
                 require_all_embeddings=True
             )
             print(f"   Found {len(sv3_video_ids)} unique video_ids with all embeddings")
+        
+        # Get all video_ids for Sora2 (if requested)
+        sora2_video_ids = []
+        if args.include_sora2:
+            print(f"\n📥 Fetching Sora2 video_ids (with all 3 embeddings)...")
+            sora2_video_ids = get_all_video_ids(
+                conn, 
+                source="Sora2",
+                require_all_embeddings=True
+            )
+            print(f"   Found {len(sora2_video_ids)} unique video_ids with all embeddings")
         
         if args.dry_run:
             # Analyze distribution to explain any discrepancies
@@ -166,13 +191,15 @@ def main():
                             print(f"     ... and {len(analysis['duplicates']) - 5} more")
             
             print(f"\n✅ Dry run complete.")
-            print(f"   Would process {len(avd_video_ids)} AVDeepfake1M videos")
+            if not args.include_sora2:
+                print(f"   Would process {len(avd_video_ids)} AVDeepfake1M videos")
             if args.include_shareveo3:
                 print(f"   Would process {len(sv3_video_ids)} ShareVeo3 videos")
+            if args.include_sora2:
+                print(f"   Would process {len(sora2_video_ids)} Sora2 videos")
             return
         
-        # Process AVDeepfake1M videos
-        print(f"\n🔄 Processing {len(avd_video_ids)} AVDeepfake1M videos...")
+        # Process AVDeepfake1M videos (only if not loading Sora2 exclusively)
         videos_data = {}
         total_segments = 0
         incomplete_videos = []
@@ -180,49 +207,51 @@ def main():
         incomplete_count = 0
         excluded_segments_count = 0
         
-        for video_id in tqdm(avd_video_ids, desc="Processing AVDeepfake1M"):
-            # Fetch video data for AVDeepfake1M
-            # Note: We need to filter by source='AVDeepfake1M' AND created_at filter
-            # Since fetch_video_data doesn't support source filter, we'll filter after fetching
-            raw_data = fetch_video_data(
-                conn, 
-                video_id, 
-                created_at_filter=args.created_at_filter,
-                deduplicate=not args.no_deduplicate
-            )
-            
-            # Filter to only AVDeepfake1M segments (with date filter already applied)
-            raw_data = [seg for seg in raw_data if seg.get('source') == 'AVDeepfake1M']
-            
-            # Skip if no data after filtering
-            if not raw_data:
-                continue
-            
-            # Count segments before filtering (for statistics)
-            segments_before = len(raw_data)
-            
-            # Check completeness for statistics
-            is_complete, stats = check_video_completeness(raw_data)
-            if is_complete:
-                complete_count += 1
-            else:
-                incomplete_count += 1
-                if not args.require_complete:
-                    incomplete_videos.append((video_id, stats))
-            
-            processed = process_video_data(
-                video_id, raw_data, 
-                require_complete=args.require_complete,
-                dataset="avdeepfake1m",
-                exclude_incomplete_augmentations=args.exclude_incomplete_augmentations
-            )
-            
-            if processed is not None:
-                videos_data[video_id] = processed
-                total_segments += processed["num_segments"]
-                # Count excluded segments (approximate: segments_before - segments in processed)
-                segments_after = processed["num_segments"] * processed["num_augmentations"]
-                excluded_segments_count += max(0, segments_before - segments_after)
+        if not args.include_sora2:
+            print(f"\n🔄 Processing {len(avd_video_ids)} AVDeepfake1M videos...")
+            for video_id in tqdm(avd_video_ids, desc="Processing AVDeepfake1M"):
+                # Fetch video data for AVDeepfake1M
+                # Note: We need to filter by source='AVDeepfake1M' AND created_at filter
+                # Since fetch_video_data doesn't support source filter, we'll filter after fetching
+                raw_data = fetch_video_data(
+                    conn, 
+                    video_id, 
+                    created_at_filter=args.created_at_filter,
+                    deduplicate=not args.no_deduplicate
+                )
+                
+                # Filter to only AVDeepfake1M segments (with date filter already applied)
+                raw_data = [seg for seg in raw_data if seg.get('source') == 'AVDeepfake1M']
+                
+                # Skip if no data after filtering
+                if not raw_data:
+                    continue
+                
+                # Count segments before filtering (for statistics)
+                segments_before = len(raw_data)
+                
+                # Check completeness for statistics
+                is_complete, stats = check_video_completeness(raw_data)
+                if is_complete:
+                    complete_count += 1
+                else:
+                    incomplete_count += 1
+                    if not args.require_complete:
+                        incomplete_videos.append((video_id, stats))
+                
+                processed = process_video_data(
+                    video_id, raw_data, 
+                    require_complete=args.require_complete,
+                    dataset="avdeepfake1m",
+                    exclude_incomplete_augmentations=args.exclude_incomplete_augmentations
+                )
+                
+                if processed is not None:
+                    videos_data[video_id] = processed
+                    total_segments += processed["num_segments"]
+                    # Count excluded segments (approximate: segments_before - segments in processed)
+                    segments_after = processed["num_segments"] * processed["num_augmentations"]
+                    excluded_segments_count += max(0, segments_before - segments_after)
         
         # Process ShareVeo3 videos (if requested)
         if args.include_shareveo3:
@@ -261,6 +290,43 @@ def main():
                     segments_after = processed["num_segments"] * processed["num_augmentations"]
                     excluded_segments_count += max(0, segments_before - segments_after)
         
+        # Process Sora2 videos (if requested)
+        if args.include_sora2:
+            print(f"\n🔄 Processing {len(sora2_video_ids)} Sora2 videos...")
+            for video_id in tqdm(sora2_video_ids, desc="Processing Sora2"):
+                raw_data = fetch_video_data(
+                    conn, 
+                    video_id, 
+                    source="Sora2",
+                    deduplicate=not args.no_deduplicate
+                )
+                
+                # Count segments before filtering (for statistics)
+                segments_before = len(raw_data)
+                
+                # Check completeness for statistics
+                is_complete, stats = check_video_completeness(raw_data)
+                if is_complete:
+                    complete_count += 1
+                else:
+                    incomplete_count += 1
+                    if not args.require_complete:
+                        incomplete_videos.append((video_id, stats))
+                
+                processed = process_video_data(
+                    video_id, raw_data, 
+                    require_complete=args.require_complete,
+                    dataset="sora2",
+                    exclude_incomplete_augmentations=args.exclude_incomplete_augmentations
+                )
+                
+                if processed is not None:
+                    videos_data[video_id] = processed
+                    total_segments += processed["num_segments"]
+                    # Count excluded segments (approximate: segments_before - segments in processed)
+                    segments_after = processed["num_segments"] * processed["num_augmentations"]
+                    excluded_segments_count += max(0, segments_before - segments_after)
+        
         print(f"\n📊 Processing Summary:")
         print(f"   Complete videos: {complete_count}")
         print(f"   Incomplete videos: {incomplete_count}")
@@ -283,15 +349,19 @@ def main():
                 print(f"   ... and {len(incomplete_videos) - 10} more")
         
         # Build final data structure
-        datasets_list = ["avdeepfake1m"]
+        datasets_list = []
+        if not args.include_sora2:
+            datasets_list.append("avdeepfake1m")
         if args.include_shareveo3:
             datasets_list.append("shareveo3")
+        if args.include_sora2:
+            datasets_list.append("sora2")
         
         data = {
             "metadata": {
                 "datasets": datasets_list,
-                "avdeepfake1m_filter": args.created_at_filter,
-                "created_at_filter": args.created_at_filter,  # Keep for backward compatibility
+                "avdeepfake1m_filter": args.created_at_filter if not args.include_sora2 else None,
+                "created_at_filter": args.created_at_filter if not args.include_sora2 else None,  # Keep for backward compatibility
                 "embedding_types": list(EMBEDDING_TABLES.keys()),
                 "video_ids": sorted(videos_data.keys()),
                 "total_videos": len(videos_data),

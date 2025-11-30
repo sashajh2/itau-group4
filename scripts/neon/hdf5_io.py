@@ -58,9 +58,9 @@ def save_to_hdf5(data: Dict, filename: str = "deepfake_embeddings.h5"):
                 "datasets",
                 data=np.array([s.encode() for s in data["metadata"]["datasets"]]),
             )
-        if "avdeepfake1m_filter" in data["metadata"]:
+        if "avdeepfake1m_filter" in data["metadata"] and data["metadata"]["avdeepfake1m_filter"] is not None:
             meta_grp.attrs["avdeepfake1m_filter"] = data["metadata"]["avdeepfake1m_filter"]
-        if "created_at_filter" in data["metadata"]:
+        if "created_at_filter" in data["metadata"] and data["metadata"]["created_at_filter"] is not None:
             meta_grp.attrs["created_at_filter"] = data["metadata"]["created_at_filter"]
         meta_grp.attrs["total_videos"] = data["metadata"]["total_videos"]
         meta_grp.attrs["total_segments"] = data["metadata"].get("total_segments", data["metadata"].get("total_embeddings", 0))
