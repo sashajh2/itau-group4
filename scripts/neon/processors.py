@@ -89,7 +89,7 @@ def process_video_data(
         video_id: The video_id
         raw_data: List of segment dictionaries from fetch_video_data
         require_complete: If True, skip videos without all embeddings
-        dataset: Dataset name ('avdeepfake1m' or 'shareveo3')
+        dataset: Dataset name ('avdeepfake1m', 'shareveo3', or 'sora2')
         exclude_incomplete_augmentations: If True, exclude entire augmentations if any segment is missing
         
     Returns:
@@ -109,6 +109,8 @@ def process_video_data(
         sources = set(seg.get("source") for seg in raw_data if seg.get("source"))
         if "ShareVeo3" in sources:
             dataset = "shareveo3"
+        elif "Sora2" in sources:
+            dataset = "sora2"
         else:
             dataset = "avdeepfake1m"
     

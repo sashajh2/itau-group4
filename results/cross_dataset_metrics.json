@@ -1,0 +1,38 @@
+{
+  "train_input_metrics": {},
+  "train_model_metrics": {},
+  "test_input_metrics": {},
+  "test_model_metrics": {},
+  "cross_dataset_metrics": {
+    "sora2_ami_vs_train_real_input": 0.015699195042787495,
+    "sora2_ari_vs_train_real_input": 0.004152893918968832,
+    "sora2_silhouette_vs_train_real_input": -0.023172395303845406,
+    "sora2_ami_vs_train_real_z_auth": 0.016969507532429828,
+    "sora2_ari_vs_train_real_z_auth": -8.485687554912145e-05,
+    "sora2_silhouette_vs_train_real_z_auth": -0.015547100454568863,
+    "sora2_kl_divergence_cross_dataset_input": 0.05963556876629298,
+    "sora2_js_distance_cross_dataset_input": 0.1276741896257075,
+    "sora2_wasserstein_distance_cross_dataset_input": 0.21947822483281376,
+    "sora2_kl_divergence_cross_dataset_z_auth": 0.03958308277162325,
+    "sora2_js_distance_cross_dataset_z_auth": 0.09909062774157482,
+    "sora2_wasserstein_distance_cross_dataset_z_auth": 0.0012522538122323448,
+    "sora2_separation_gap_cross_dataset_input": -0.01969122886657715,
+    "sora2_mean_distance_real_cross_dataset_input": 5.701537609100342,
+    "sora2_mean_distance_fake_cross_dataset_input": 5.913084983825684,
+    "sora2_variability_ratio_cross_dataset_input": 1.1723565451995048,
+    "sora2_separation_gap_cross_dataset_z_auth": 0.00021630525588989258,
+    "sora2_mean_distance_real_cross_dataset_z_auth": 0.22583909332752228,
+    "sora2_mean_distance_fake_cross_dataset_z_auth": 0.22673681378364563,
+    "sora2_variability_ratio_cross_dataset_z_auth": 1.155134502128501
+  },
+  "config": {
+    "train_hdf5": "exports/deepfake_embeddings_2.h5",
+    "test_hdf5": "exports/sora2_embeddings.h5",
+    "checkpoint_path": "checkpoints/disentangled_equal_weights/best_model.pt",
+    "encoder_name": "hubert",
+    "input_dim": 768,
+    "output_dim": 128,
+    "train_num_samples": 293362,
+    "test_num_samples": 11517
+  }
+}
