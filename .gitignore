@@ -18,6 +18,11 @@ credentials.json
 data/temp_video_extracted/
 data/faiss_indexes/
 
+# Ignore model checkpoints
+checkpoints/
+*.pt
+*.pth
+
 # Ignore retrieved embeddings
 embeddings/retrieved/
 
