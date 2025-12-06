@@ -66,7 +66,8 @@ def evaluate_single_dataset(
     output_dim: int = 128,
     batch_size: int = 256,
     device: str = 'cuda',
-    verbose: bool = True
+    verbose: bool = True,
+    max_samples_for_silhouette: int = 5000
 ) -> Dict[str, Dict[str, float]]:
     """
     Evaluate model on single dataset (matches evaluate_metrics.py).
@@ -104,7 +105,10 @@ def evaluate_single_dataset(
     # Clustering metrics
     if verbose:
         print("      Computing clustering metrics...")
-    clustering = compute_clustering_metrics(embeddings, labels, metric='cosine')
+    clustering = compute_clustering_metrics(
+        embeddings, labels, metric='cosine',
+        max_samples_for_silhouette=max_samples_for_silhouette
+    )
     input_metrics.update(clustering)
     
     # Distribution metrics
@@ -145,7 +149,10 @@ def evaluate_single_dataset(
     # Clustering metrics
     if verbose:
         print("      Computing clustering metrics...")
-    clustering = compute_clustering_metrics(z_auth_embeddings, labels, metric='cosine')
+    clustering = compute_clustering_metrics(
+        z_auth_embeddings, labels, metric='cosine',
+        max_samples_for_silhouette=max_samples_for_silhouette
+    )
     model_metrics.update(clustering)
     
     # Distribution metrics
@@ -183,7 +190,8 @@ def evaluate_cross_dataset(
     output_dim: int = 128,
     batch_size: int = 256,
     device: str = 'cuda',
-    verbose: bool = True
+    verbose: bool = True,
+    max_samples_for_silhouette: int = 5000
 ) -> Dict[str, float]:
     """
     Evaluate cross-dataset generalization (matches evaluate_cross_dataset.py).
@@ -263,8 +271,14 @@ def evaluate_cross_dataset(
     # Clustering metrics (AMI, ARI, Silhouette)
     if verbose:
         print("      Computing clustering metrics...")
-    clustering_input = compute_clustering_metrics(combined_input, combined_labels, metric='cosine')
-    clustering_z_auth = compute_clustering_metrics(combined_z_auth, combined_labels, metric='cosine')
+    clustering_input = compute_clustering_metrics(
+        combined_input, combined_labels, metric='cosine',
+        max_samples_for_silhouette=max_samples_for_silhouette
+    )
+    clustering_z_auth = compute_clustering_metrics(
+        combined_z_auth, combined_labels, metric='cosine',
+        max_samples_for_silhouette=max_samples_for_silhouette
+    )
     
     # Use empty prefix to match evaluate_cross_dataset.py when called without prefix
     name_prefix = ""

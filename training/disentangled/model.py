@@ -4,7 +4,8 @@ Dual projection heads for disentangling identity and authenticity.
 Architecture:
 - Shared encoder (pretrained embeddings as input)
 - Two 2-layer MLP projection heads: f_auth and f_id
-- Both outputs are L2-normalized
+- z_id is L2-normalized (for identity clustering)
+- z_auth is NOT normalized (preserves variance and Wasserstein distance metrics)
 """
 import torch
 import torch.nn as nn
@@ -74,14 +75,14 @@ class DisentangledProjector(nn.Module):
             z: Input embeddings, shape [batch_size, input_dim]
         
         Returns:
-            z_auth: Authenticity embeddings, shape [batch_size, output_dim] (L2-normalized)
+            z_auth: Authenticity embeddings, shape [batch_size, output_dim] (NOT normalized, preserves variance)
             z_id: Identity embeddings, shape [batch_size, output_dim] (L2-normalized)
         """
         z_auth = self.f_auth(z)
         z_id = self.f_id(z)
         
-        # L2-normalize both outputs
-        z_auth = F.normalize(z_auth, dim=-1)
+        # Only normalize z_id (for identity clustering)
+        # z_auth is NOT normalized to preserve variance and Wasserstein distance metrics
         z_id = F.normalize(z_id, dim=-1)
         
         return z_auth, z_id

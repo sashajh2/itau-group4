@@ -16,7 +16,8 @@ from sklearn.metrics import (
 )
 
 
-def compute_clustering_metrics(embeddings, labels, metric='cosine', random_state=42):
+def compute_clustering_metrics(embeddings, labels, metric='cosine', random_state=42, 
+                                max_samples_for_silhouette=None):
     """
     Compute AMI, ARI, and Silhouette scores for embeddings.
     
@@ -25,6 +26,8 @@ def compute_clustering_metrics(embeddings, labels, metric='cosine', random_state
         labels: np.ndarray or torch.Tensor, shape [n_samples], binary 0=real, 1=fake
         metric: Distance metric for silhouette ('cosine' or 'euclidean')
         random_state: Random seed for k-means
+        max_samples_for_silhouette: If provided, subsample to this many samples for silhouette
+                                    computation (for speed). None = use all samples.
     
     Returns:
         dict with keys: 'ami', 'ari', 'silhouette_gt', 'silhouette_clusters'
@@ -38,19 +41,34 @@ def compute_clustering_metrics(embeddings, labels, metric='cosine', random_state
     # Ensure labels are binary integers
     labels = labels.astype(int)
     
-    # K-means clustering with k=2
+    # K-means clustering with k=2 (always on full dataset for accuracy)
     kmeans = KMeans(n_clusters=2, init='k-means++', n_init=10, random_state=random_state)
     cluster_labels = kmeans.fit_predict(embeddings)
     
-    # Compute metrics
+    # Compute metrics (always on full dataset)
     ami = adjusted_mutual_info_score(labels, cluster_labels)
     ari = adjusted_rand_score(labels, cluster_labels)
     
-    # Silhouette with ground truth labels (primary metric)
-    silhouette_gt = silhouette_score(embeddings, labels, metric=metric)
-    
-    # Silhouette with cluster labels (validation metric)
-    silhouette_clusters = silhouette_score(embeddings, cluster_labels, metric=metric)
+    # Silhouette computation: subsample if requested for speed
+    if max_samples_for_silhouette is not None and len(embeddings) > max_samples_for_silhouette:
+        # Randomly subsample for silhouette computation
+        np.random.seed(random_state)
+        indices = np.random.choice(len(embeddings), size=max_samples_for_silhouette, replace=False)
+        silhouette_embeddings = embeddings[indices]
+        silhouette_labels = labels[indices]
+        silhouette_cluster_labels = cluster_labels[indices]
+        
+        # Use silhouette_samples for faster computation on subset
+        from sklearn.metrics import silhouette_samples
+        silhouette_scores_gt = silhouette_samples(silhouette_embeddings, silhouette_labels, metric=metric)
+        silhouette_scores_clusters = silhouette_samples(silhouette_embeddings, silhouette_cluster_labels, metric=metric)
+        
+        silhouette_gt = float(np.mean(silhouette_scores_gt))
+        silhouette_clusters = float(np.mean(silhouette_scores_clusters))
+    else:
+        # Use full dataset
+        silhouette_gt = silhouette_score(embeddings, labels, metric=metric)
+        silhouette_clusters = silhouette_score(embeddings, cluster_labels, metric=metric)
     
     return {
         'ami': float(ami),
@@ -398,7 +416,7 @@ def compute_local_content_group_metrics(embeddings, labels, content_groups, z_id
 
 
 def evaluate_embeddings(model, dataloader, device, use_auth=True, max_samples=10000, 
-                        compute_all_metrics=True):
+                        compute_all_metrics=True, max_samples_for_silhouette=None):
     """
     Evaluate embeddings from model on dataset.
     
@@ -409,6 +427,8 @@ def evaluate_embeddings(model, dataloader, device, use_auth=True, max_samples=10
         use_auth: If True, use z^auth; if False, use input embeddings
         max_samples: Maximum samples to evaluate (for speed)
         compute_all_metrics: If True, compute all metrics (distribution, separation, local)
+        max_samples_for_silhouette: If provided, subsample to this many samples for silhouette
+                                    computation (for speed). None = use all samples.
     
     Returns:
         dict of metrics
@@ -464,7 +484,10 @@ def evaluate_embeddings(model, dataloader, device, use_auth=True, max_samples=10
         all_z_id = all_z_id[:max_samples]
     
     # Compute clustering metrics (always computed)
-    metrics = compute_clustering_metrics(all_embeddings, all_labels, metric='cosine')
+    metrics = compute_clustering_metrics(
+        all_embeddings, all_labels, metric='cosine',
+        max_samples_for_silhouette=max_samples_for_silhouette
+    )
     
     # Compute additional metrics if requested
     if compute_all_metrics:

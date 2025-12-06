@@ -274,7 +274,8 @@ def train(
     before_metrics = evaluate_embeddings(
         model, val_loader, device, 
         use_auth=False,  # Use input embeddings
-        max_samples=10000
+        max_samples=10000,
+        max_samples_for_silhouette=1000  # Use subset for fast silhouette during training
     )
     
     metrics_history['before_training'] = before_metrics
@@ -357,7 +358,8 @@ def train(
         after_metrics = evaluate_embeddings(
             model, val_loader, device,
             use_auth=True,  # Use z^auth from f_auth projection
-            max_samples=10000
+            max_samples=10000,
+            max_samples_for_silhouette=1000  # Use subset for fast silhouette during training
         )
         
         print(f"After Epoch {epoch+1} Metrics:")
