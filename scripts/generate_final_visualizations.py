@@ -538,15 +538,21 @@ def process_model(
     print(f"Processing Model: {model_name.upper()}")
     print("="*80)
     
-    model_output_dir = output_base_dir / model_name
-    
     # Process each projection type
-    for projection_type in PROJECTION_TYPES:
+    # If pipeline_dir is provided, process all trained projections (skip baseline)
+    # If pipeline_dir is None, process baseline only
+    if pipeline_dir:
+        projection_types_to_process = ['conservative', 'moderate', 'aggressive']
+    else:
+        projection_types_to_process = ['baseline']
+    
+    for projection_type in projection_types_to_process:
         print(f"\n{'='*80}")
         print(f"Projection Type: {projection_type.upper()}")
         print(f"{'='*80}")
         
-        projection_output_dir = model_output_dir / projection_type
+        # New structure: {projection_type}/{model}/
+        projection_output_dir = output_base_dir / projection_type / model_name
         
         try:
             # Get embeddings for this projection
@@ -646,7 +652,22 @@ def main():
                 max_samples=args.max_samples
             )
     else:
+        # Process each model with its pipeline directory
         for model_name, pipeline_dir in models_to_process:
+            # First process baseline for this model
+            print(f"\n📊 Processing baseline for {model_name}...")
+            process_model(
+                model_name=model_name,
+                train_hdf5=args.train_hdf5,
+                sora_hdf5=args.sora_hdf5,
+                pipeline_dir=None,  # Baseline doesn't need pipeline_dir
+                output_base_dir=output_base_dir,
+                device=args.device,
+                max_samples=args.max_samples
+            )
+            
+            # Then process trained projections (conservative, moderate, aggressive)
+            print(f"\n📊 Processing trained projections for {model_name}...")
             process_model(
                 model_name=model_name,
                 train_hdf5=args.train_hdf5,
