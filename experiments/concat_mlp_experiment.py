@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
@@ -42,12 +42,15 @@ np.random.seed(42)
 # ==============================================================================
 # Configuration
 # ==============================================================================
-HDF5_PATH = "exports/deepfake_embeddings_2.h5"  # Adjust path as needed for Colab
+HDF5_PATH = "exports/deepfake_embeddings_2.h5"  # Adjust path as needed or Colab
 RESULTS_DIR = "results/concat_mlp"
 BATCH_SIZE = 256
 NUM_EPOCHS = 30
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
+
+# Cross-validation settings
+N_FOLDS = 4  # 4-fold CV with 75-25 splits
 
 # Class imbalance handling: "none", "class_weights", or "oversampling"
 BALANCE_METHOD = "oversampling"
@@ -432,11 +435,11 @@ def plot_evaluation(labels, preds, save_path=None):
 
 
 # ==============================================================================
-# 7. Main
+# 7. Main with K-Fold Cross Validation
 # ==============================================================================
 def main():
     # Create results directory (include balance method in path)
-    results_dir = f"{RESULTS_DIR}_{BALANCE_METHOD}"
+    results_dir = f"{RESULTS_DIR}_{BALANCE_METHOD}_{N_FOLDS}fold"
     os.makedirs(results_dir, exist_ok=True)
 
     # Detect device
@@ -454,124 +457,191 @@ def main():
     print("="*60)
     embeddings, labels, metadata = load_concatenated_embeddings(HDF5_PATH)
 
-    # Stratified split for class balance
+    # Setup K-Fold cross validation
     print("\n" + "="*60)
-    print("Creating Train/Val Split")
+    print(f"Setting up {N_FOLDS}-Fold Cross Validation (75-25 splits)")
     print("="*60)
-    X_train, X_val, y_train, y_val = train_test_split(
-        embeddings, labels,
-        test_size=0.3,
-        stratify=labels,
-        random_state=42
-    )
 
-    print(f"Train set: {len(X_train):,} samples")
-    print(f"  Real: {(y_train == 0).sum():,} ({100 * (y_train == 0).mean():.1f}%)")
-    print(f"  Fake: {(y_train == 1).sum():,} ({100 * (y_train == 1).mean():.1f}%)")
-    print(f"\nVal set: {len(X_val):,} samples")
-    print(f"  Real: {(y_val == 0).sum():,} ({100 * (y_val == 0).mean():.1f}%)")
-    print(f"  Fake: {(y_val == 1).sum():,} ({100 * (y_val == 1).mean():.1f}%)")
+    skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=42)
 
-    # Calculate class weights for imbalance handling
-    num_real = (y_train == 0).sum()
-    num_fake = (y_train == 1).sum()
-    pos_weight = num_real / num_fake  # Weight for positive (fake) class
+    # Store results from each fold
+    fold_results = []
+    all_fold_histories = []
+    best_overall_f1 = 0
+    best_overall_model_state = None
+    best_fold = -1
 
-    print(f"\nClass imbalance ratio: {num_real/num_fake:.1f}:1 (real:fake)")
-    print(f"Balance method: {BALANCE_METHOD}")
+    # Collect all predictions for final evaluation
+    all_val_labels = []
+    all_val_preds = []
+    all_val_penultimate = []
 
-    # Create datasets
-    train_dataset = EmbeddingDataset(X_train, y_train)
-    val_dataset = EmbeddingDataset(X_val, y_val)
+    for fold, (train_idx, val_idx) in enumerate(skf.split(embeddings, labels)):
+        print("\n" + "="*60)
+        print(f"FOLD {fold + 1}/{N_FOLDS}")
+        print("="*60)
 
-    # Create dataloaders based on balance method
-    if BALANCE_METHOD == "oversampling":
-        # Create sample weights: higher weight for minority class (fake)
-        sample_weights = np.where(y_train == 1, pos_weight, 1.0)
-        sampler = WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(sample_weights),
-            replacement=True
+        # Split data
+        X_train, X_val = embeddings[train_idx], embeddings[val_idx]
+        y_train, y_val = labels[train_idx], labels[val_idx]
+
+        print(f"Train set: {len(X_train):,} samples")
+        print(f"  Real: {(y_train == 0).sum():,} ({100 * (y_train == 0).mean():.1f}%)")
+        print(f"  Fake: {(y_train == 1).sum():,} ({100 * (y_train == 1).mean():.1f}%)")
+        print(f"Val set: {len(X_val):,} samples")
+        print(f"  Real: {(y_val == 0).sum():,} ({100 * (y_val == 0).mean():.1f}%)")
+        print(f"  Fake: {(y_val == 1).sum():,} ({100 * (y_val == 1).mean():.1f}%)")
+
+        # Calculate class weights for imbalance handling
+        num_real = (y_train == 0).sum()
+        num_fake = (y_train == 1).sum()
+        pos_weight = num_real / num_fake
+
+        print(f"Class imbalance ratio: {num_real/num_fake:.1f}:1 (real:fake)")
+        print(f"Balance method: {BALANCE_METHOD}")
+
+        # Create datasets
+        train_dataset = EmbeddingDataset(X_train, y_train)
+        val_dataset = EmbeddingDataset(X_val, y_val)
+
+        # Create dataloaders based on balance method
+        if BALANCE_METHOD == "oversampling":
+            sample_weights = np.where(y_train == 1, pos_weight, 1.0)
+            sampler = WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(sample_weights),
+                replacement=True
+            )
+            train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler)
+        else:
+            train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+        # Create fresh model for each fold
+        model = MLPClassifier(input_dim=3328).to(device)
+
+        # Train
+        train_pos_weight = pos_weight if BALANCE_METHOD == "class_weights" else None
+        history, best_model_state, best_val_f1 = train_model(
+            model, train_loader, val_loader, device,
+            num_epochs=NUM_EPOCHS, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY,
+            pos_weight=train_pos_weight
         )
-        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler)
-        print(f"Using WeightedRandomSampler for oversampling minority class")
-    else:
-        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+        all_fold_histories.append(history)
 
-    # Create model
+        # Track best model across all folds
+        if best_val_f1 > best_overall_f1:
+            best_overall_f1 = best_val_f1
+            best_overall_model_state = best_model_state
+            best_fold = fold + 1
+
+        # Extract predictions and embeddings from best model
+        model.load_state_dict(best_model_state)
+        model.eval()
+
+        fold_penultimate = []
+        fold_labels = []
+        fold_preds = []
+
+        with torch.no_grad():
+            for batch_x, batch_y in val_loader:
+                batch_x = batch_x.to(device)
+                logits, penultimate = model(batch_x, return_penultimate=True)
+
+                fold_penultimate.append(penultimate.cpu().numpy())
+                fold_labels.append(batch_y.numpy())
+                fold_preds.append(torch.sigmoid(logits).squeeze().cpu().numpy())
+
+        fold_penultimate = np.concatenate(fold_penultimate)
+        fold_labels = np.concatenate(fold_labels)
+        fold_preds = np.concatenate(fold_preds)
+
+        # Compute fold metrics
+        fold_preds_binary = (fold_preds > 0.5).astype(int)
+        fold_tp = ((fold_preds_binary == 1) & (fold_labels == 1)).sum()
+        fold_fp = ((fold_preds_binary == 1) & (fold_labels == 0)).sum()
+        fold_fn = ((fold_preds_binary == 0) & (fold_labels == 1)).sum()
+        fold_tn = ((fold_preds_binary == 0) & (fold_labels == 0)).sum()
+
+        fold_acc = (fold_tp + fold_tn) / (fold_tp + fold_tn + fold_fp + fold_fn)
+        fold_precision = fold_tp / (fold_tp + fold_fp + 1e-8)
+        fold_recall = fold_tp / (fold_tp + fold_fn + 1e-8)
+        fold_f1 = 2 * fold_precision * fold_recall / (fold_precision + fold_recall + 1e-8)
+
+        fpr, tpr, _ = roc_curve(fold_labels, fold_preds)
+        fold_auc = auc(fpr, tpr)
+
+        fold_results.append({
+            'fold': fold + 1,
+            'best_val_f1': best_val_f1,
+            'accuracy': fold_acc,
+            'precision': fold_precision,
+            'recall': fold_recall,
+            'f1': fold_f1,
+            'auc': fold_auc
+        })
+
+        print(f"\nFold {fold + 1} Results: Acc={fold_acc:.4f}, F1={fold_f1:.4f}, AUC={fold_auc:.4f}")
+
+        # Collect for aggregate evaluation
+        all_val_labels.append(fold_labels)
+        all_val_preds.append(fold_preds)
+        all_val_penultimate.append(fold_penultimate)
+
+        # Save fold-specific training curves
+        plot_training_curves(history, save_path=f"{results_dir}/training_curves_fold{fold+1}.png")
+
+    # Aggregate results across folds
     print("\n" + "="*60)
-    print("Creating Model")
+    print("CROSS-VALIDATION SUMMARY")
     print("="*60)
-    model = MLPClassifier(input_dim=3328).to(device)
-    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # Train
+    metrics_names = ['accuracy', 'precision', 'recall', 'f1', 'auc']
+    cv_summary = {}
+
+    for metric in metrics_names:
+        values = [r[metric] for r in fold_results]
+        mean_val = np.mean(values)
+        std_val = np.std(values)
+        cv_summary[f'{metric}_mean'] = mean_val
+        cv_summary[f'{metric}_std'] = std_val
+        print(f"{metric.capitalize():12s}: {mean_val:.4f} +/- {std_val:.4f}")
+
+    print(f"\nBest fold: {best_fold} with F1={best_overall_f1:.4f}")
+
+    # Concatenate all validation predictions for overall evaluation
+    all_val_labels = np.concatenate(all_val_labels)
+    all_val_preds = np.concatenate(all_val_preds)
+    all_val_penultimate = np.concatenate(all_val_penultimate)
+
+    # Plot aggregate evaluation
     print("\n" + "="*60)
-    print("Training")
+    print("Plotting Aggregate Results")
     print("="*60)
 
-    # Pass pos_weight only if using class_weights method
-    train_pos_weight = pos_weight if BALANCE_METHOD == "class_weights" else None
-
-    history, best_model_state, best_val_f1 = train_model(
-        model, train_loader, val_loader, device,
-        num_epochs=NUM_EPOCHS, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY,
-        pos_weight=train_pos_weight
+    roc_auc = plot_evaluation(
+        all_val_labels, all_val_preds,
+        save_path=f"{results_dir}/evaluation_aggregate.png"
     )
 
-    # Plot training curves
-    print("\n" + "="*60)
-    print("Plotting Results")
-    print("="*60)
-    plot_training_curves(history, save_path=f"{results_dir}/training_curves.png")
-
-    # Load best model and extract penultimate embeddings
-    model.load_state_dict(best_model_state)
-    model.to(device)
-    model.eval()
-
-    all_penultimate = []
-    all_labels = []
-    all_preds = []
-
-    with torch.no_grad():
-        for batch_x, batch_y in tqdm(val_loader, desc="Extracting embeddings"):
-            batch_x = batch_x.to(device)
-            logits, penultimate = model(batch_x, return_penultimate=True)
-
-            all_penultimate.append(penultimate.cpu().numpy())
-            all_labels.append(batch_y.numpy())
-            all_preds.append(torch.sigmoid(logits).squeeze().cpu().numpy())
-
-    penultimate_embeddings = np.concatenate(all_penultimate)
-    val_labels_np = np.concatenate(all_labels)
-    val_preds_np = np.concatenate(all_preds)
-
-    print(f"Penultimate embeddings shape: {penultimate_embeddings.shape}")
-
-    # Plot penultimate projections
+    # Plot penultimate projections (subsample from all folds)
     plot_penultimate_projections(
-        penultimate_embeddings, val_labels_np,
+        all_val_penultimate, all_val_labels,
         save_path=f"{results_dir}/penultimate_projections.png"
     )
 
-    # Plot evaluation
-    roc_auc = plot_evaluation(
-        val_labels_np, val_preds_np,
-        save_path=f"{results_dir}/evaluation.png"
-    )
-
-    # Save model and metrics
+    # Save best model and metrics
     print("\n" + "="*60)
     print("Saving Results")
     print("="*60)
 
     torch.save({
-        'model_state_dict': best_model_state,
-        'history': history,
-        'best_val_f1': best_val_f1,
+        'model_state_dict': best_overall_model_state,
+        'best_fold': best_fold,
+        'best_val_f1': best_overall_f1,
+        'fold_results': fold_results,
         'config': {
             'input_dim': 3328,
             'hidden_dim': 1024,
@@ -580,29 +650,32 @@ def main():
             'learning_rate': LEARNING_RATE,
             'weight_decay': WEIGHT_DECAY,
             'num_epochs': NUM_EPOCHS,
+            'n_folds': N_FOLDS,
             'balance_method': BALANCE_METHOD
         }
     }, f"{results_dir}/best_model.pt")
 
+    # Save detailed metrics
     metrics_summary = {
-        'best_val_f1': best_val_f1,
-        'final_train_acc': history['train_acc'][-1],
-        'final_val_acc': history['val_acc'][-1],
-        'final_train_f1': history['train_f1'][-1],
-        'final_val_f1': history['val_f1'][-1],
-        'roc_auc': roc_auc,
-        'num_train_samples': len(X_train),
-        'num_val_samples': len(X_val),
-        'balance_method': BALANCE_METHOD
+        'n_folds': N_FOLDS,
+        'balance_method': BALANCE_METHOD,
+        'best_fold': best_fold,
+        'best_fold_f1': best_overall_f1,
+        'aggregate_auc': roc_auc,
+        **cv_summary,
+        'fold_results': fold_results
     }
 
     with open(f"{results_dir}/metrics.json", 'w') as f:
         json.dump(metrics_summary, f, indent=2)
 
     print(f"\nResults saved to {results_dir}/")
-    print("\nExperiment Summary:")
-    for k, v in metrics_summary.items():
-        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+    print("\nFinal Cross-Validation Summary:")
+    print(f"  F1 Score:  {cv_summary['f1_mean']:.4f} +/- {cv_summary['f1_std']:.4f}")
+    print(f"  Accuracy:  {cv_summary['accuracy_mean']:.4f} +/- {cv_summary['accuracy_std']:.4f}")
+    print(f"  Precision: {cv_summary['precision_mean']:.4f} +/- {cv_summary['precision_std']:.4f}")
+    print(f"  Recall:    {cv_summary['recall_mean']:.4f} +/- {cv_summary['recall_std']:.4f}")
+    print(f"  AUC:       {cv_summary['auc_mean']:.4f} +/- {cv_summary['auc_std']:.4f}")
 
 
 if __name__ == "__main__":
