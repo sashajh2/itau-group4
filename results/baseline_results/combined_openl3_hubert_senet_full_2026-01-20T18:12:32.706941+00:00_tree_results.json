@@ -1,0 +1,25 @@
+{
+  "created_at": "2026-01-20T18:12:32.706941+00:00",
+  "combined_embeddings": "embeddings/generated/combined_openl3_hubert_senet_full_2026-01-20T18:12:32.706941+00:00.npy",
+  "combined_mapping": "embeddings/generated/combined_openl3_hubert_senet_full_2026-01-20T18:12:32.706941+00:00_mapping.json",
+  "hdf5": "data/evaluation_data/deepfake_embeddings_2.h5",
+  "train_size": 184142,
+  "test_size": 46036,
+  "random_state": 42,
+  "libomp_loaded": "/Users/sainadeshpande/Desktop/Saina/MIT/Gupta UROP/itau-group4/venv/lib/python3.9/site-packages/torch/lib/libomp.dylib",
+  "pos_weight": 25.41473490934129,
+  "models": {
+    "random_forest": {
+      "tp": 615,
+      "tn": 44292,
+      "fp": 1,
+      "fn": 1128
+    },
+    "xgboost": {
+      "tp": 1516,
+      "tn": 40719,
+      "fp": 3574,
+      "fn": 227
+    }
+  }
+}

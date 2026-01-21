@@ -7,7 +7,6 @@ across time, constructs temporal patches, encodes them with separate Transformer
 """
 
 import os
-import json
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 
@@ -59,7 +58,7 @@ class ModelConfig:
     audio_embedding_type: str = "openl3"  # or "hubert"
     video_embedding_type: str = "senet"
     use_audio_labels: bool = True  # Use audio labels, else video labels
-    filter_dataset: Optional[str] = None  # "avdeepfake1m" or "shareveo3" or "sora2" or None for all
+    filter_dataset: Optional[str] = None  # "avdeepfake1m" or "shareveo3" or None for both
 
 
 # ============================================================================
@@ -121,13 +120,8 @@ class AVH5Dataset(Dataset):
                 if isinstance(dataset, bytes):
                     dataset = dataset.decode()
                 
-                # Handle case-insensitive matching and alternative names
-                if self.filter_dataset is not None:
-                    filter_lower = self.filter_dataset.lower()
-                    dataset_lower = dataset.lower()
-                    # Support "sora2", "Sora2", "SORA2" variations
-                    if filter_lower not in dataset_lower and dataset_lower not in filter_lower:
-                        continue
+                if self.filter_dataset is not None and dataset != self.filter_dataset:
+                    continue
                 
                 num_augmentations = vid_grp.attrs["num_augmentations"]
                 
@@ -173,10 +167,8 @@ class AVH5Dataset(Dataset):
         label_seq = torch.from_numpy(labels).float()
         
         # Convert soft labels to binary (threshold at 0.5)
-        # Original convention: 1=fake, 0=real
-        # We flip to standard convention: 1=real, 0=fake
-        # Labels > 0.5 (original fake) → 0 (fake), Labels <= 0.5 (original real) → 1 (real)
-        label_seq_binary = (label_seq <= 0.5).float()
+        # Labels > 0.5 are considered real (1), <= 0.5 are fake (0)
+        label_seq_binary = (label_seq > 0.5).float()
         
         return {
             "audio_seq": audio_seq,
@@ -832,34 +824,8 @@ def train_model(
     device: torch.device,
     save_dir: str = "./checkpoints",
 ):
-    """
-    Full training loop with per-epoch history tracking.
-    
-    Saves training history to training_history.json alongside the checkpoint.
-    """
+    """Full training loop"""
     os.makedirs(save_dir, exist_ok=True)
-    
-    # Initialize training history
-    history = {
-        'train_loss': [],
-        'train_auroc': [],
-        'train_accuracy': [],
-        'val_loss': [],
-        'val_auroc': [],
-        'val_accuracy': [],
-        'epochs': [],
-        'best_epoch': None,
-        'best_val_auroc': 0.0,
-        'config': {
-            'learning_rate': config.learning_rate,
-            'weight_decay': config.weight_decay,
-            'batch_size': config.batch_size,
-            'num_epochs': config.num_epochs,
-            'model_dim': config.model_dim,
-            'num_heads': config.num_heads,
-            'num_layers': config.num_layers,
-        }
-    }
     
     # Loss and optimizer
     criterion = nn.BCEWithLogitsLoss()
@@ -876,28 +842,14 @@ def train_model(
         train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, epoch)
         print(f"Epoch {epoch} Train - Loss: {train_metrics['loss']:.4f}, AUROC: {train_metrics['auroc']:.4f}, Acc: {train_metrics.get('accuracy', 0.0):.4f}")
         
-        # Store training metrics
-        history['train_loss'].append(float(train_metrics['loss']))
-        history['train_auroc'].append(float(train_metrics['auroc']))
-        history['train_accuracy'].append(float(train_metrics.get('accuracy', 0.0)))
-        history['epochs'].append(epoch)
-        
         # Validate
         if val_loader is not None:
             val_metrics = validate_epoch(model, val_loader, criterion, device, epoch)
             print(f"Epoch {epoch} Val   - Loss: {val_metrics['loss']:.4f}, AUROC: {val_metrics['auroc']:.4f}, Acc: {val_metrics.get('accuracy', 0.0):.4f}")
             
-            # Store validation metrics
-            history['val_loss'].append(float(val_metrics['loss']))
-            history['val_auroc'].append(float(val_metrics['auroc']))
-            history['val_accuracy'].append(float(val_metrics.get('accuracy', 0.0)))
-            
             # Save best model
             if val_metrics['auroc'] > best_val_auroc:
                 best_val_auroc = val_metrics['auroc']
-                history['best_epoch'] = epoch
-                history['best_val_auroc'] = float(best_val_auroc)
-                
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
@@ -905,67 +857,6 @@ def train_model(
                     'val_auroc': best_val_auroc,
                 }, os.path.join(save_dir, 'best_model.pt'))
                 print(f"Saved best model with AUROC: {best_val_auroc:.4f}")
-        
-        # Save history after each epoch (so you don't lose progress if training stops)
-        history_file = os.path.join(save_dir, 'training_history.json')
-        with open(history_file, 'w') as f:
-            json.dump(history, f, indent=2)
-    
-    print(f"\n✅ Training history saved to: {history_file}")
-    return history
-
-
-# ============================================================================
-# TESTING FUNCTION
-# ============================================================================
-
-def test_model(
-    model: AVTemporalModel,
-    test_loader: DataLoader,
-    device: torch.device,
-    checkpoint_path: Optional[str] = None,
-) -> Dict[str, float]:
-    """
-    Test/evaluate the model on a test dataset.
-    
-    Args:
-        model: The model to test
-        test_loader: DataLoader for test data
-        device: Device to run on
-        checkpoint_path: Optional path to checkpoint to load
-    
-    Returns:
-        Dictionary with test metrics (loss, auroc, accuracy)
-    """
-    # Load checkpoint if provided
-    if checkpoint_path and os.path.exists(checkpoint_path):
-        print(f"Loading checkpoint from: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"✓ Loaded checkpoint from epoch {checkpoint.get('epoch', 'N/A')}")
-        if 'val_auroc' in checkpoint:
-            print(f"  Checkpoint validation AUROC: {checkpoint['val_auroc']:.4f}")
-    
-    # Use validation epoch function for testing
-    criterion = nn.BCEWithLogitsLoss()
-    test_metrics = validate_epoch(model, test_loader, criterion, device, epoch=0)
-    
-    print("\n" + "="*60)
-    print("TEST RESULTS")
-    print("="*60)
-    print(f"Test Loss: {test_metrics['loss']:.4f}")
-    print(f"Test AUROC: {test_metrics['auroc']:.4f}")
-    print(f"Test Accuracy: {test_metrics['accuracy']:.4f}")
-    print("="*60)
-    
-    # Additional diagnostics for AUROC=0.0 issue
-    if test_metrics['auroc'] == 0.0:
-        print("\n⚠️  WARNING: AUROC is 0.0 - this usually means:")
-        print("   1. All labels in the test set are the same class (all 0 or all 1)")
-        print("   2. All model predictions are the same class")
-        print("   Check the diagnostic output above for label/prediction distribution")
-    
-    return test_metrics
 
 
 # ============================================================================
@@ -1120,136 +1011,6 @@ def main():
     )
 
 
-def test_main(
-    hdf5_path: str,
-    checkpoint_path: str,
-    filter_dataset: Optional[str] = None,
-    audio_embedding_type: str = "openl3",
-    video_embedding_type: str = "senet",
-    use_audio_labels: bool = True,
-    batch_size: int = 16,
-):
-    """
-    Test script for evaluating a trained model on a new dataset.
-    
-    Args:
-        hdf5_path: Path to HDF5 file containing test data
-        checkpoint_path: Path to model checkpoint (.pt file)
-        filter_dataset: Optional dataset filter ("sora2", "avdeepfake1m", etc.)
-        audio_embedding_type: Type of audio embedding to use
-        video_embedding_type: Type of video embedding to use
-        use_audio_labels: Whether to use audio labels
-        batch_size: Batch size for testing
-    """
-    # Configuration (same as training config)
-    config = ModelConfig(
-        audio_emb_dim=512,  # openl3
-        video_emb_dim=2048,  # senet
-        patch_size=8,
-        patch_stride=4,
-        model_dim=256,
-        num_heads=8,
-        num_layers=4,
-        dim_feedforward=1024,
-        dropout=0.1,
-        learning_rate=1e-4,
-        weight_decay=1e-5,
-        batch_size=batch_size,
-        num_epochs=1,  # Not used for testing
-        audio_embedding_type=audio_embedding_type,
-        video_embedding_type=video_embedding_type,
-        use_audio_labels=use_audio_labels,
-        filter_dataset=filter_dataset,
-    )
-    
-    # Device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-    
-    # Load test dataset
-    print("\n" + "="*60)
-    filter_str = f" (filtered: {filter_dataset})" if filter_dataset else ""
-    print(f"Loading test dataset from: {hdf5_path}{filter_str}")
-    print("="*60)
-    
-    test_dataset = AVH5Dataset(
-        hdf5_path=hdf5_path,
-        audio_embedding_type=config.audio_embedding_type,
-        video_embedding_type=config.video_embedding_type,
-        use_audio_labels=config.use_audio_labels,
-        video_ids=None,
-        filter_dataset=filter_dataset,
-    )
-    
-    print(f"\nTest dataset size: {len(test_dataset)} samples")
-    
-    # Check label distribution in the dataset
-    print("\nChecking label distribution...")
-    all_labels_check = []
-    for i in range(min(100, len(test_dataset))):  # Sample first 100 samples
-        sample = test_dataset[i]
-        labels = sample['label_seq'].numpy()
-        all_labels_check.extend(labels.flatten())
-    
-    if len(all_labels_check) > 0:
-        unique_labels, counts = np.unique(np.array(all_labels_check), return_counts=True)
-        print(f"  Label distribution (from first {min(100, len(test_dataset))} samples):")
-        for label, count in zip(unique_labels, counts):
-            pct = 100 * count / len(all_labels_check)
-            label_name = "real" if label > 0.5 else "fake"
-            print(f"    {label_name} (value={label:.2f}): {count:,} ({pct:.1f}%)")
-        
-        if len(unique_labels) == 1:
-            print("\n  ⚠️  WARNING: Only one class found in labels!")
-            print("     AUROC will be 0.0 because AUROC requires both classes.")
-            print("     This might be normal if sora2 dataset only contains one class (all fake or all real).")
-    
-    # Create test dataloader
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        collate_fn=collate_fn,
-        num_workers=4,
-        pin_memory=True if device.type == "cuda" else False,
-    )
-    
-    # Create model
-    model = AVTemporalModel(config).to(device)
-    
-    # Test model
-    test_metrics = test_model(
-        model=model,
-        test_loader=test_loader,
-        device=device,
-        checkpoint_path=checkpoint_path,
-    )
-    
-    return test_metrics
-
-
 if __name__ == "__main__":
-    import sys
-    
-    # Check if running in test mode
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        # Test mode: python time_series_model.py test <hdf5_path> <checkpoint_path> [filter_dataset]
-        if len(sys.argv) < 4:
-            print("Usage: python time_series_model.py test <hdf5_path> <checkpoint_path> [filter_dataset]")
-            print("\nExample:")
-            print("  python time_series_model.py test sora2_embeddings.h5 checkpoints/best_model.pt sora2")
-            sys.exit(1)
-        
-        hdf5_path = sys.argv[2]
-        checkpoint_path = sys.argv[3]
-        filter_dataset = sys.argv[4] if len(sys.argv) > 4 else None
-        
-        test_main(
-            hdf5_path=hdf5_path,
-            checkpoint_path=checkpoint_path,
-            filter_dataset=filter_dataset,
-        )
-    else:
-        # Training mode (default)
-        main()
+    main()
 

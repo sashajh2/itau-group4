@@ -36,6 +36,72 @@ HYPERPARAMETER_CONFIGS = {
         'use_adaptive_scaling': False,
         'min_loss_ratio': 0.1,
     },
+    'lambda_var_0_0': {
+        'min_variance': 0.1,
+        'variance_reg_weight': 1.0,
+        'lambda_var': 0.0,
+        'lambda_orth': 0.1,
+        'temperature': 0.1,
+        'min_orth': 0.001,
+        'use_equal_weight_normalization': False,
+        'use_adaptive_scaling': False,
+        'min_loss_ratio': 0.1,
+    },
+    'lambda_var_0_6': {
+        'min_variance': 0.1,
+        'variance_reg_weight': 1.0,
+        'lambda_var': 0.6,
+        'lambda_orth': 0.1,
+        'temperature': 0.1,
+        'min_orth': 0.001,
+        'use_equal_weight_normalization': False,
+        'use_adaptive_scaling': False,
+        'min_loss_ratio': 0.1,
+    },
+    'lambda_var_0_1': {
+        'min_variance': 0.1,
+        'variance_reg_weight': 1.0,
+        'lambda_var': 0.1,
+        'lambda_orth': 0.1,
+        'temperature': 0.1,
+        'min_orth': 0.001,
+        'use_equal_weight_normalization': False,
+        'use_adaptive_scaling': False,
+        'min_loss_ratio': 0.1,
+    },
+    'lambda_var_0_2': {
+        'min_variance': 0.1,
+        'variance_reg_weight': 1.0,
+        'lambda_var': 0.2,
+        'lambda_orth': 0.1,
+        'temperature': 0.1,
+        'min_orth': 0.001,
+        'use_equal_weight_normalization': False,
+        'use_adaptive_scaling': False,
+        'min_loss_ratio': 0.1,
+    },
+    'lambda_var_0_3': {
+        'min_variance': 0.1,
+        'variance_reg_weight': 1.0,
+        'lambda_var': 0.3,
+        'lambda_orth': 0.1,
+        'temperature': 0.1,
+        'min_orth': 0.001,
+        'use_equal_weight_normalization': False,
+        'use_adaptive_scaling': False,
+        'min_loss_ratio': 0.1,
+    },
+    'lambda_var_0_4': {
+        'min_variance': 0.1,
+        'variance_reg_weight': 1.0,
+        'lambda_var': 0.4,
+        'lambda_orth': 0.1,
+        'temperature': 0.1,
+        'min_orth': 0.001,
+        'use_equal_weight_normalization': False,
+        'use_adaptive_scaling': False,
+        'min_loss_ratio': 0.1,
+    },
     'moderate': {
         'min_variance': 0.2,
         'variance_reg_weight': 2.0,
@@ -148,7 +214,10 @@ def main():
     parser.add_argument('--run-hyperparameter-sweep', action='store_true',
                        help='Run all 3 hyperparameter configs (Conservative/Moderate/Aggressive)')
     parser.add_argument('--config', type=str, default='conservative',
-                       choices=['conservative', 'moderate', 'aggressive'],
+                       choices=[
+                           'conservative', 'moderate', 'aggressive',
+                           'lambda_var_0_0', 'lambda_var_0_1', 'lambda_var_0_2', 'lambda_var_0_3', 'lambda_var_0_4', 'lambda_var_0_6'
+                       ],
                        help='Single config to run (if not running sweep)')
     
     # Device
@@ -320,4 +389,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

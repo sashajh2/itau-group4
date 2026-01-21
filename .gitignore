@@ -40,9 +40,11 @@ models/pretrained/senet/senet50_ft_weight.pkl
 *.tar
 *.tar.gz
 
-# Large embedding / artifact files (GitHub rejects >100MB)
-*.h5
-
 # Don’t ignore ALL .npy files if you use some in testing
 # Optionally exclude only large embedding arrays:
 # data/embeddings/*.npy  ← only if you create a folder like that
+embeddings/generated/*.npy
+embeddings/generated/*.faiss
+embeddings/generated/*_mapping.json
+data/evaluation_data/*
+configs/configs.yaml

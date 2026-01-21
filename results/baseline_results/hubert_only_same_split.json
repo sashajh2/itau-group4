@@ -1,0 +1,24 @@
+{
+  "created_by": "hubert_baseline_same_split.py",
+  "embeddings": "embeddings/generated/hubert_audio_2025-08-21T13:51:04.162022+00:00.npy",
+  "labels": "labels/audio/hubert/unified_hubert_labels.pkl",
+  "train_size": 752,
+  "test_size": 189,
+  "random_state": 42,
+  "libomp_loaded": "/Users/sainadeshpande/Desktop/Saina/MIT/Gupta UROP/itau-group4/venv/lib/python3.9/site-packages/torch/lib/libomp.dylib",
+  "pos_weight": 1.2511961722488039,
+  "models": {
+    "random_forest": {
+      "tp": 17,
+      "tn": 64,
+      "fp": 41,
+      "fn": 67
+    },
+    "xgboost": {
+      "tp": 29,
+      "tn": 54,
+      "fp": 51,
+      "fn": 55
+    }
+  }
+}

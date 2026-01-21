@@ -1,0 +1,25 @@
+{
+  "created_at": "2026-01-20T15:23:09.847472+00:00",
+  "combined_embeddings": "embeddings/generated/combined_openl3_hubert_senet_tuned_2026-01-20T15:23:09.847472+00:00.npy",
+  "combined_mapping": "embeddings/generated/combined_openl3_hubert_senet_tuned_2026-01-20T15:23:09.847472+00:00_mapping.json",
+  "label_file": "labels/audio/hubert/unified_hubert_labels.pkl",
+  "train_size": 752,
+  "test_size": 189,
+  "random_state": 42,
+  "libomp_loaded": "/Users/sainadeshpande/Desktop/Saina/MIT/Gupta UROP/itau-group4/venv/lib/python3.9/site-packages/torch/lib/libomp.dylib",
+  "models": {
+    "random_forest": {
+      "tp": 30,
+      "tn": 72,
+      "fp": 33,
+      "fn": 54
+    },
+    "xgboost": {
+      "tp": 37,
+      "tn": 64,
+      "fp": 41,
+      "fn": 47
+    }
+  },
+  "pos_weight": 1.2511961722488039
+}

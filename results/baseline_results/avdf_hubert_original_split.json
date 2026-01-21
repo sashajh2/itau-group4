@@ -1,0 +1,92 @@
+{
+  "meta": {
+    "hdf5": "data/evaluation_data/deepfake_embeddings_2.h5",
+    "encoder": "hubert",
+    "val_split": 0.2,
+    "num_samples": 230178,
+    "num_train": 184142,
+    "num_val": 46036,
+    "real_train": 177171,
+    "fake_train": 6971,
+    "real_val": 44293,
+    "fake_val": 1743
+  },
+  "mlp_simple": {
+    "confusion": {
+      "TP": 1496,
+      "TN": 38578,
+      "FP": 5715,
+      "FN": 247
+    },
+    "embedding_metrics": {
+      "ami": 0.010567943885223786,
+      "ari": -0.04232887601739676,
+      "silhouette_gt": 0.03254583477973938,
+      "silhouette_clusters": -0.0016927806427702308,
+      "kl_divergence": 0.36855382761679756,
+      "js_distance": 0.16204271703618353,
+      "wasserstein_distance": 1.961010624144817,
+      "mean_cosine_sim_real_to_real": 0.5344763994216919,
+      "std_cosine_sim_real_to_real": 0.08779627084732056,
+      "mean_cosine_sim_fake_to_real": 0.4854126274585724,
+      "std_cosine_sim_fake_to_real": 0.060836173593997955,
+      "mean_cosine_sim_real_to_fake": 0.5023209452629089,
+      "mean_cosine_sim_fake_to_fake": 0.5240115523338318,
+      "separation_gap": 0.04906377196311951,
+      "mean_distance_real": 30.1124324798584,
+      "std_distance_real": 6.015450477600098,
+      "mean_distance_fake": 28.15239906311035,
+      "std_distance_fake": 4.216527938842773,
+      "entropy_distance_real": 3.1711148737488566,
+      "entropy_distance_fake": 3.489922295501187,
+      "variability_ratio": 0.700949655304101
+    }
+  },
+  "mlp_sasha": {
+    "confusion": {
+      "TP": 1469,
+      "TN": 41308,
+      "FP": 2985,
+      "FN": 274
+    },
+    "embedding_metrics": {
+      "ami": 0.04433360636176177,
+      "ari": -0.0031363563890372185,
+      "silhouette_gt": 0.5735704898834229,
+      "silhouette_clusters": 0.10544481128454208,
+      "kl_divergence": 1.1540610488723198,
+      "js_distance": 0.4986186386485277,
+      "wasserstein_distance": 7.738471580287677,
+      "mean_cosine_sim_real_to_real": 0.8343414068222046,
+      "std_cosine_sim_real_to_real": 0.18917061388492584,
+      "mean_cosine_sim_fake_to_real": 0.24390627443790436,
+      "std_cosine_sim_fake_to_real": 0.2566013038158417,
+      "mean_cosine_sim_real_to_fake": 0.2525326609611511,
+      "mean_cosine_sim_fake_to_fake": 0.804416298866272,
+      "separation_gap": 0.5904351472854614,
+      "mean_distance_real": 9.833263397216797,
+      "std_distance_real": 4.260497093200684,
+      "mean_distance_fake": 17.571735382080078,
+      "std_distance_fake": 5.824956893920898,
+      "entropy_distance_real": 2.6017686554762633,
+      "entropy_distance_fake": 3.1467137265805194,
+      "variability_ratio": 1.367201236466095
+    }
+  },
+  "random_forest": {
+    "confusion": {
+      "TP": 1142,
+      "TN": 43940,
+      "FP": 353,
+      "FN": 601
+    }
+  },
+  "xgboost": {
+    "confusion": {
+      "TP": 1358,
+      "TN": 43183,
+      "FP": 1110,
+      "FN": 385
+    }
+  }
+}
