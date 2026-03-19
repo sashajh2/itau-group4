@@ -34,9 +34,10 @@ HIDDEN_DIM = 256
 NUM_LAYERS = 2
 DROPOUT    = 0.3
 
-EPOCHS     = 75
-BATCH_SIZE = 16
-LR         = 1e-4
+EPOCHS              = 75
+BATCH_SIZE          = 16
+LR                  = 1e-4
+EARLY_STOPPING_PAT  = 10  # stop if test F1 doesn't improve for this many epochs
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -269,8 +270,10 @@ def main():
     print("-" * 80)
 
     losses = []
-    best_test_f1 = 0.0
-    best_epoch   = 0
+    best_test_f1  = 0.0
+    best_epoch    = 0
+    best_state    = None
+    patience_ctr  = 0
 
     for epoch in range(1, EPOCHS + 1):
         t0 = time.time()
@@ -284,7 +287,11 @@ def main():
         if test_metrics["f1"] > best_test_f1:
             best_test_f1 = test_metrics["f1"]
             best_epoch   = epoch
+            best_state   = {k: v.clone() for k, v in model.state_dict().items()}
+            patience_ctr = 0
             tag = " *"
+        else:
+            patience_ctr += 1
 
         if epoch % 5 == 0 or epoch == 1:
             print(
@@ -292,8 +299,14 @@ def main():
                 f"train: {fmt(train_metrics)}  |  test: {fmt(test_metrics)}{tag}"
             )
 
+        if patience_ctr >= EARLY_STOPPING_PAT:
+            print(f"\nEarly stopping at epoch {epoch} (no improvement for {EARLY_STOPPING_PAT} epochs)")
+            break
+
     print("-" * 80)
     print(f"Best test F1: {best_test_f1:.3f} (epoch {best_epoch})")
+    print("Restoring best model weights...")
+    model.load_state_dict(best_state)
 
     # ── Final Evaluation ──────────────────────────────────────────────────
     train_cm = full_evaluation(model, train_loader, train_samples, device, "TRAIN")
