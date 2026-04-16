@@ -1,0 +1,118 @@
+{
+  "before_training": {
+    "ami": -0.0013771107250017845,
+    "ari": 0.006690305140527739,
+    "silhouette_gt": -0.04505941644310951,
+    "silhouette_clusters": 0.25454869866371155,
+    "kl_divergence": 16.818692137444508,
+    "js_distance": 0.7125924223880112,
+    "wasserstein_distance": 0.4255441657958492,
+    "mean_cosine_sim_real_to_real": 0.7939494848251343,
+    "std_cosine_sim_real_to_real": 0.08582847565412521,
+    "mean_cosine_sim_fake_to_real": 0.8143317699432373,
+    "std_cosine_sim_fake_to_real": 0.07892408967018127,
+    "mean_cosine_sim_real_to_fake": 0.7483139038085938,
+    "mean_cosine_sim_fake_to_fake": 0.8560245633125305,
+    "separation_gap": -0.020382285118103027,
+    "mean_distance_real": 5.544270038604736,
+    "std_distance_real": 0.8516117334365845,
+    "mean_distance_fake": 5.322194576263428,
+    "std_distance_fake": 0.3744673430919647,
+    "entropy_distance_real": 4.027704392722822,
+    "entropy_distance_fake": 1.9999999994089892,
+    "variability_ratio": 0.4397160447013474,
+    "intra_group_cosine_sim_mean": 0.6502369046211243,
+    "intra_group_cosine_sim_std": 0.15668819844722748,
+    "intra_group_variance_real_mean": 22.370874404907227,
+    "intra_group_variance_fake_mean": 23.728164672851562,
+    "intra_group_variance_ratio": 1.0606722045491677
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "train_losses": {
+        "total": 0.5362137800289525,
+        "proto": 0.3760950118303299,
+        "var": 0.3026209535698096,
+        "orth": 0.08808290689355797
+      },
+      "val_losses": {
+        "total": 0.523462563753128,
+        "proto": 0.36238498240709305,
+        "var": 0.30528080463409424,
+        "orth": 0.08437176793813705
+      },
+      "metrics": {
+        "ami": -0.0025704795499986895,
+        "ari": 0.0026298946309908275,
+        "silhouette_gt": 0.01588512398302555,
+        "silhouette_clusters": 0.25414910912513733,
+        "kl_divergence": 17.706546941750968,
+        "js_distance": 0.7443380591751377,
+        "wasserstein_distance": 0.03616736090231327,
+        "mean_cosine_sim_real_to_real": 0.8324791789054871,
+        "std_cosine_sim_real_to_real": 0.06429143995046616,
+        "mean_cosine_sim_fake_to_real": 0.8222530484199524,
+        "std_cosine_sim_fake_to_real": 0.08114438503980637,
+        "mean_cosine_sim_real_to_fake": 0.7954583764076233,
+        "mean_cosine_sim_fake_to_fake": 0.8605208396911621,
+        "separation_gap": 0.010226130485534668,
+        "mean_distance_real": 0.5463760495185852,
+        "std_distance_real": 0.0919327363371849,
+        "mean_distance_fake": 0.5579261183738708,
+        "std_distance_fake": 0.11279615014791489,
+        "entropy_distance_real": 3.8792573335541576,
+        "entropy_distance_fake": 1.9999999994089892,
+        "variability_ratio": 1.2269421592273104,
+        "intra_group_cosine_sim_mean": 0.7258663773536682,
+        "intra_group_cosine_sim_std": 0.10773477703332901,
+        "intra_group_variance_real_mean": 0.2177274227142334,
+        "intra_group_variance_fake_mean": 0.2872633635997772,
+        "intra_group_variance_ratio": 1.3193715329321303
+      }
+    },
+    {
+      "epoch": 2,
+      "train_losses": {
+        "total": 0.4899345425268014,
+        "proto": 0.33665859575072926,
+        "var": 0.28977897266546887,
+        "orth": 0.08386464644637373
+      },
+      "val_losses": {
+        "total": 0.48051854223012924,
+        "proto": 0.33058319985866547,
+        "var": 0.2842640206217766,
+        "orth": 0.0780333410948515
+      },
+      "metrics": {
+        "ami": 0.0012139436656922844,
+        "ari": 0.0027125330628989344,
+        "silhouette_gt": 0.016835683956742287,
+        "silhouette_clusters": 0.26301807165145874,
+        "kl_divergence": 17.27354301481638,
+        "js_distance": 0.7284902422180669,
+        "wasserstein_distance": 0.03660779620610899,
+        "mean_cosine_sim_real_to_real": 0.8450807332992554,
+        "std_cosine_sim_real_to_real": 0.06120673939585686,
+        "mean_cosine_sim_fake_to_real": 0.8354410529136658,
+        "std_cosine_sim_fake_to_real": 0.0776989609003067,
+        "mean_cosine_sim_real_to_fake": 0.8105239868164062,
+        "mean_cosine_sim_fake_to_fake": 0.8710600137710571,
+        "separation_gap": 0.0096396803855896,
+        "mean_distance_real": 0.5267221927642822,
+        "std_distance_real": 0.091663658618927,
+        "mean_distance_fake": 0.5377643704414368,
+        "std_distance_fake": 0.1137571632862091,
+        "entropy_distance_real": 3.8676224902448992,
+        "entropy_distance_fake": 1.9999999994089892,
+        "variability_ratio": 1.241027958910396,
+        "intra_group_cosine_sim_mean": 0.7094401717185974,
+        "intra_group_cosine_sim_std": 0.11238890141248703,
+        "intra_group_variance_real_mean": 0.20292255282402039,
+        "intra_group_variance_fake_mean": 0.26674675941467285,
+        "intra_group_variance_ratio": 1.3145249533429137
+      }
+    }
+  ]
+}
