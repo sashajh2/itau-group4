@@ -1,15 +1,16 @@
 """
-Training script for the LSTM deepfake detector on concatenated embeddings
-(HuBERT 768 + OpenL3 512 + SENet 2048 = 3328-dim input).
+Training script for the LSTM deepfake detector on a single embedding type.
 
 Usage:
-    python -m transformer_experiments.lstm_train_concat
+    python -m transformer_experiments.lstm_train_single
 """
 
 import os
+import random
 import time
 
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 import numpy as np
 import torch
 import torch.nn as nn
@@ -21,19 +22,27 @@ from transformer_experiments.dataset import (
     sample_cross_dataset_split,
     sample_train_test_no_overlap,
 )
+# To switch LSTM directionality, swap the import below:
+#   Bidirectional  -> from transformer_experiments.lstm_model import VideoLSTM
+#   Unidirectional -> from transformer_experiments.lstm_baseline_model import VideoLSTMBaseline as VideoLSTM
 from transformer_experiments.lstm_model import VideoLSTM
 
 # ── Defaults ───────────────────────────────────────────────────────────────
 HDF5_PATH = "exports/deepfake_embeddings.h5"
 N_TRAIN_REAL = 200
 N_TRAIN_FAKE = 200
+N_VAL_REAL   = 50   # carved out of the train pool; no overlap with test
+N_VAL_FAKE   = 50
 N_TEST_REAL  = 100
 N_TEST_FAKE  = 100
 SEED = 42
 
-EMBEDDING_KEYS = ("hubert", "openl3", "senet")
-INPUT_DIM = 768 + 512 + 2048  # 3328
-
+# To switch embedding type, change EMBEDDING_KEYS and INPUT_DIM:
+#   HuBERT  -> EMBEDDING_KEYS = ("hubert",),  INPUT_DIM = 768
+#   SENet   -> EMBEDDING_KEYS = ("senet",),   INPUT_DIM = 2048
+#   OpenL3  -> EMBEDDING_KEYS = ("openl3",),  INPUT_DIM = 512
+EMBEDDING_KEYS = ("hubert",)
+INPUT_DIM  = 768
 HIDDEN_DIM = 256
 NUM_LAYERS = 2
 DROPOUT    = 0.3
@@ -41,8 +50,46 @@ DROPOUT    = 0.3
 EPOCHS              = 75
 BATCH_SIZE          = 16
 LR                  = 1e-4
-EARLY_STOPPING_PAT  = 10  # stop if test F1 doesn't improve for this many epochs
+EARLY_STOPPING_PAT  = 10
+
+# Segment order applied to every video's embedding sequence before the LSTM sees it.
+# Each video is a sequence of T embeddings — this controls the temporal order of those segments.
+#   "as_is"   -> keep original order
+#   "reverse" -> flip the segment sequence for every video
+#   "shuffle" -> randomly permute segments independently per video
+SEGMENT_ORDER = "as_is"
 # ──────────────────────────────────────────────────────────────────────────
+
+
+def split_val(
+    samples: list, n_val_real: int, n_val_fake: int, seed: int
+):
+    """Stratified split: carve val off the front of a shuffled train pool."""
+    rng = random.Random(seed)
+    real = [s for s in samples if s["label"] == 0]
+    fake = [s for s in samples if s["label"] == 1]
+    rng.shuffle(real)
+    rng.shuffle(fake)
+    val   = real[:n_val_real] + fake[:n_val_fake]
+    train = real[n_val_real:] + fake[n_val_fake:]
+    rng.shuffle(val)
+    rng.shuffle(train)
+    return train, val
+
+
+def apply_segment_order(x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+    """Apply SEGMENT_ORDER transform to a padded batch (B, T, D) in-place per sample."""
+    if SEGMENT_ORDER == "as_is":
+        return x
+    x = x.clone()
+    for i, L in enumerate(lengths.tolist()):
+        L = int(L)
+        if SEGMENT_ORDER == "reverse":
+            x[i, :L] = x[i, :L].flip(0)
+        elif SEGMENT_ORDER == "shuffle":
+            perm = torch.randperm(L, device=x.device)
+            x[i, :L] = x[i, :L][perm]
+    return x
 
 
 def compute_metrics(logits: torch.Tensor, labels: torch.Tensor) -> dict:
@@ -58,8 +105,10 @@ def compute_metrics(logits: torch.Tensor, labels: torch.Tensor) -> dict:
     prec = tp / max(tp + fp, 1)
     rec  = tp / max(tp + fn, 1)
     f1   = 2 * prec * rec / max(prec + rec, 1e-8)
+    f2   = 5 * prec * rec / max(4 * prec + rec, 1e-8)
 
-    return {"acc": acc, "prec": prec, "rec": rec, "f1": f1, "tp": tp, "fp": fp, "fn": fn, "tn": tn}
+    return {"acc": acc, "prec": prec, "rec": rec, "f1": f1, "f2": f2,
+            "tp": tp, "fp": fp, "fn": fn, "tn": tn}
 
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
@@ -74,6 +123,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         labels = batch["labels"].to(device)
 
         lengths = mask.sum(dim=1).long()
+        X = apply_segment_order(X, lengths)
 
         optimizer.zero_grad()
         logits = model(X, lengths)
@@ -105,6 +155,7 @@ def evaluate(model, loader, criterion, device):
         labels = batch["labels"].to(device)
 
         lengths = mask.sum(dim=1).long()
+        X = apply_segment_order(X, lengths)
         logits  = model(X, lengths)
         loss    = criterion(logits, labels)
 
@@ -125,15 +176,20 @@ def full_evaluation(model, loader, samples, device, split_name):
     all_logits = []
     all_labels = []
 
+    t_start = time.time()
     for batch in loader:
         X      = batch["embeddings"].to(device)
         mask   = batch["attention_mask"].to(device)
         labels = batch["labels"]
 
         lengths = mask.sum(dim=1).long()
+        X = apply_segment_order(X, lengths)
         logits  = model(X, lengths)
         all_logits.append(logits.cpu())
         all_labels.append(labels)
+    t_end = time.time()
+
+    speed = len(samples) / max(t_end - t_start, 1e-6)  # samples/sec
 
     all_logits = torch.cat(all_logits)
     all_labels = torch.cat(all_labels)
@@ -156,16 +212,8 @@ def full_evaluation(model, loader, samples, device, split_name):
     print(f"  Precision: {m['prec']:.3f}")
     print(f"  Recall:    {m['rec']:.3f}")
     print(f"  F1:        {m['f1']:.3f}")
-
-    lengths = np.array([s["embeddings"].shape[0] for s in samples])
-    pred_real_lengths   = lengths[preds.numpy() == 0]
-    pred_fake_lengths   = lengths[preds.numpy() == 1]
-    actual_real_lengths = lengths[labels_int.numpy() == 0]
-    actual_fake_lengths = lengths[labels_int.numpy() == 1]
-    print(f"\n  Mean length — actual  REAL: {actual_real_lengths.mean():.1f} (n={len(actual_real_lengths)})")
-    print(f"  Mean length — actual  FAKE: {actual_fake_lengths.mean():.1f} (n={len(actual_fake_lengths)})")
-    print(f"  Mean length — predict REAL: {pred_real_lengths.mean():.1f} (n={len(pred_real_lengths)})")
-    print(f"  Mean length — predict FAKE: {pred_fake_lengths.mean():.1f} (n={len(pred_fake_lengths)})")
+    print(f"  F2:        {m['f2']:.3f}")
+    print(f"  Speed:     {speed:.1f} samples/sec")
 
     print(f"\n  Per-sample predictions:")
     print(f"  {'#':>3s}  {'True':>5s}  {'Pred':>5s}  {'Prob':>6s}  {'':>4s}  Video")
@@ -179,47 +227,73 @@ def full_evaluation(model, loader, samples, device, split_name):
             f"{s['video_id'][:30]} aug={s['aug_idx']}"
         )
 
-    return np.array([[tn, fp], [fn, tp]])
+    cm = np.array([[tn, fp], [fn, tp]])
+    return cm, m, speed
 
 
-def plot_training_curve(losses: list, save_path: str):
+def plot_training_curve(losses: list, title: str, save_path: str):
     plt.figure(figsize=(8, 4))
     plt.plot(losses)
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
-    plt.title("LSTM Training Loss (HuBERT + OpenL3 + SENet)")
+    plt.title(f"LSTM Training Loss — {title}")
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Training curve saved to: {save_path}")
 
 
-def plot_confusion_matrices(train_cm: np.ndarray, test_cm: np.ndarray, save_path: str):
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    class_names = ["Real", "Fake"]
+def plot_confusion_matrices(
+    train_cm: np.ndarray,
+    test_cm: np.ndarray,
+    train_metrics: dict,
+    test_metrics: dict,
+    train_speed: float,
+    test_speed: float,
+    title: str,
+    save_path: str,
+):
+    fig = plt.figure(figsize=(11, 7))
+    gs = gridspec.GridSpec(2, 2, height_ratios=[3, 1], hspace=0.45, wspace=0.35)
 
-    for ax, cm, title in zip(axes, [train_cm, test_cm], ["Train", "Test"]):
-        im = ax.imshow(cm, cmap="Blues", vmin=0)
-        ax.set_xticks([0, 1])
-        ax.set_yticks([0, 1])
-        ax.set_xticklabels(class_names)
-        ax.set_yticklabels(class_names)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("Actual")
-        ax.set_title(title)
+    class_names = ["Real", "Fake"]
+    splits = [("Train", train_cm, train_metrics, train_speed),
+              ("Test",  test_cm,  test_metrics,  test_speed)]
+
+    for col, (split_label, cm, m, speed) in enumerate(splits):
+        ax_cm = fig.add_subplot(gs[0, col])
+        im = ax_cm.imshow(cm, cmap="Blues", vmin=0)
+        ax_cm.set_xticks([0, 1])
+        ax_cm.set_yticks([0, 1])
+        ax_cm.set_xticklabels(class_names)
+        ax_cm.set_yticklabels(class_names)
+        ax_cm.set_xlabel("Predicted")
+        ax_cm.set_ylabel("Actual")
+        ax_cm.set_title(split_label, fontsize=13, fontweight="bold")
 
         total = cm.sum()
         for i in range(2):
             for j in range(2):
                 pct = cm[i, j] / total * 100
                 color = "white" if cm[i, j] > total / 4 else "black"
-                ax.text(j, i, f"{cm[i, j]}\n({pct:.0f}%)",
-                        ha="center", va="center", color=color, fontsize=13)
+                ax_cm.text(j, i, f"{cm[i, j]}\n({pct:.0f}%)",
+                           ha="center", va="center", color=color, fontsize=13)
 
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        fig.colorbar(im, ax=ax_cm, fraction=0.046, pad=0.04)
 
-    fig.suptitle("LSTM (HuBERT + OpenL3 + SENet) — Confusion Matrices", fontsize=14, fontweight="bold")
-    fig.tight_layout()
+        ax_txt = fig.add_subplot(gs[1, col])
+        ax_txt.axis("off")
+        stats = (
+            f"Accuracy:   {m['acc']:.3f}    Precision:  {m['prec']:.3f}\n"
+            f"Recall:     {m['rec']:.3f}    F1:         {m['f1']:.3f}\n"
+            f"F2:         {m['f2']:.3f}    Speed:      {speed:.1f} samp/s"
+        )
+        ax_txt.text(0.5, 0.5, stats, ha="center", va="center",
+                    fontsize=11, family="monospace",
+                    transform=ax_txt.transAxes,
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor="#f0f4ff", edgecolor="#aabbdd"))
+
+    fig.suptitle(title, fontsize=13, fontweight="bold")
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Confusion matrix plot saved to: {save_path}")
@@ -228,7 +302,8 @@ def plot_confusion_matrices(train_cm: np.ndarray, test_cm: np.ndarray, save_path
 def fmt(metrics: dict) -> str:
     return (
         f"loss={metrics['loss']:.4f}  acc={metrics['acc']:.3f}  "
-        f"prec={metrics['prec']:.3f}  rec={metrics['rec']:.3f}  f1={metrics['f1']:.3f}"
+        f"prec={metrics['prec']:.3f}  rec={metrics['rec']:.3f}  "
+        f"f1={metrics['f1']:.3f}  f2={metrics['f2']:.3f}"
     )
 
 
@@ -241,16 +316,24 @@ def main():
     results_dir = os.path.join("results", "lstm")
     os.makedirs(results_dir, exist_ok=True)
 
+    # Derive labels for filenames from config
+    embedding_label = "_".join(EMBEDDING_KEYS)
+    lstm_type = "bilstm" if "Baseline" not in VideoLSTM.__name__ else "lstm"
+
+    # Request N_TRAIN + N_VAL samples from the train pool so val is carved from
+    # the same video-separated pool and never touches test videos.
     split_configs = [
         ("no_overlap", lambda: sample_train_test_no_overlap(
             HDF5_PATH,
-            n_train_real=N_TRAIN_REAL, n_train_fake=N_TRAIN_FAKE,
+            n_train_real=N_TRAIN_REAL + N_VAL_REAL,
+            n_train_fake=N_TRAIN_FAKE + N_VAL_FAKE,
             n_test_real=N_TEST_REAL,   n_test_fake=N_TEST_FAKE,
             seed=SEED, embedding_keys=EMBEDDING_KEYS,
         )),
         ("cross_dataset", lambda: sample_cross_dataset_split(
             HDF5_PATH,
-            n_train_real=N_TRAIN_REAL, n_train_fake=N_TRAIN_FAKE,
+            n_train_real=N_TRAIN_REAL + N_VAL_REAL,
+            n_train_fake=N_TRAIN_FAKE + N_VAL_FAKE,
             n_test_real=N_TEST_REAL,   n_test_fake=N_TEST_FAKE,
             seed=SEED, embedding_keys=EMBEDDING_KEYS,
         )),
@@ -262,30 +345,36 @@ def main():
         print(f"{'#' * 80}")
 
         # ── Data ──────────────────────────────────────────────────────────────
-        print(f"\nSampling dataset ({' + '.join(EMBEDDING_KEYS)}, input_dim={INPUT_DIM})...")
-        train_samples, test_samples = get_samples()
+        print(f"\nSampling dataset ({embedding_label})...")
+        raw_train_samples, test_samples = get_samples()
 
-        all_lengths = [s["embeddings"].shape[0] for s in train_samples + test_samples]
-        max_seq_len = max(all_lengths)
-        print(f"Sequence lengths — min: {min(all_lengths)}, max: {max_seq_len}, mean: {np.mean(all_lengths):.1f}")
+        # Carve val from the train pool (no test video IDs in val)
+        train_samples, val_samples = split_val(
+            raw_train_samples, N_VAL_REAL, N_VAL_FAKE, SEED
+        )
+
+        # max_seq_len from train only — no test/val leakage
+        train_lengths = [s["embeddings"].shape[0] for s in train_samples]
+        max_seq_len = max(train_lengths)
+        print(f"Sequence lengths (train) — min: {min(train_lengths)}, max: {max_seq_len}, mean: {np.mean(train_lengths):.1f}")
 
         train_ds = DeepfakeSequenceDataset(train_samples, max_seq_len=max_seq_len)
+        val_ds   = DeepfakeSequenceDataset(val_samples,   max_seq_len=max_seq_len)
         test_ds  = DeepfakeSequenceDataset(test_samples,  max_seq_len=max_seq_len)
 
         train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,  collate_fn=collate_fn)
+        val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn)
         test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn)
 
         n_train_real = sum(1 for s in train_samples if s["label"] == 0)
         n_train_fake = sum(1 for s in train_samples if s["label"] == 1)
+        n_val_real   = sum(1 for s in val_samples   if s["label"] == 0)
+        n_val_fake   = sum(1 for s in val_samples   if s["label"] == 1)
         n_test_real  = sum(1 for s in test_samples  if s["label"] == 0)
         n_test_fake  = sum(1 for s in test_samples  if s["label"] == 1)
         print(f"Train: {len(train_samples)} ({n_train_real} real, {n_train_fake} fake)")
+        print(f"Val:   {len(val_samples)}  ({n_val_real} real, {n_val_fake} fake)")
         print(f"Test:  {len(test_samples)}  ({n_test_real} real, {n_test_fake} fake)")
-
-        real_lengths = [s["embeddings"].shape[0] for s in test_samples if s["label"] == 0]
-        fake_lengths = [s["embeddings"].shape[0] for s in test_samples if s["label"] == 1]
-        print(f"Real — mean: {np.mean(real_lengths):.1f}, max: {max(real_lengths)}")
-        print(f"Fake — mean: {np.mean(fake_lengths):.1f}, max: {max(fake_lengths)}")
 
         # ── Model ─────────────────────────────────────────────────────────────
         model = VideoLSTM(
@@ -306,24 +395,24 @@ def main():
         print("-" * 80)
 
         losses = []
-        best_test_f1  = 0.0
-        best_epoch    = 0
-        best_state    = None
-        patience_ctr  = 0
+        best_val_f1  = 0.0
+        best_epoch   = 0
+        best_state   = None
+        patience_ctr = 0
 
         for epoch in range(1, EPOCHS + 1):
             t0 = time.time()
             train_metrics = train_one_epoch(model, train_loader, criterion, optimizer, device)
-            test_metrics  = evaluate(model, test_loader, criterion, device)
+            val_metrics   = evaluate(model, val_loader, criterion, device)
             elapsed = time.time() - t0
 
             losses.append(train_metrics["loss"])
 
             tag = ""
-            if test_metrics["f1"] > best_test_f1:
-                best_test_f1 = test_metrics["f1"]
-                best_epoch   = epoch
-                best_state   = {k: v.clone() for k, v in model.state_dict().items()}
+            if val_metrics["f1"] > best_val_f1:
+                best_val_f1 = val_metrics["f1"]
+                best_epoch  = epoch
+                best_state  = {k: v.clone() for k, v in model.state_dict().items()}
                 patience_ctr = 0
                 tag = " *"
             else:
@@ -332,7 +421,7 @@ def main():
             if epoch % 5 == 0 or epoch == 1:
                 print(
                     f"Epoch {epoch:3d}/{EPOCHS}  ({elapsed:.1f}s)  "
-                    f"train: {fmt(train_metrics)}  |  test: {fmt(test_metrics)}{tag}"
+                    f"train: {fmt(train_metrics)}  |  val: {fmt(val_metrics)}{tag}"
                 )
 
             if patience_ctr >= EARLY_STOPPING_PAT:
@@ -340,18 +429,31 @@ def main():
                 break
 
         print("-" * 80)
-        print(f"Best test F1: {best_test_f1:.3f} (epoch {best_epoch})")
+        print(f"Best val F1: {best_val_f1:.3f} (epoch {best_epoch})")
         print("Restoring best model weights...")
         model.load_state_dict(best_state)
 
         # ── Final Evaluation ──────────────────────────────────────────────────
-        train_cm = full_evaluation(model, train_loader, train_samples, device, "TRAIN")
-        test_cm  = full_evaluation(model, test_loader,  test_samples,  device, "TEST")
+        train_cm, train_m, train_speed = full_evaluation(model, train_loader, train_samples, device, "TRAIN")
+        test_cm,  test_m,  test_speed  = full_evaluation(model, test_loader,  test_samples,  device, "TEST")
 
         # ── Save plots ────────────────────────────────────────────────────────
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        plot_training_curve(losses, os.path.join(results_dir, f"loss_concat_{split_name}_{timestamp}.png"))
-        plot_confusion_matrices(train_cm, test_cm, os.path.join(results_dir, f"confusion_concat_{split_name}_{timestamp}.png"))
+        file_stem = f"{embedding_label}_{lstm_type}_{SEGMENT_ORDER}_{split_name}_{timestamp}"
+        plot_title = f"{embedding_label.upper()} | {lstm_type.upper()} | {SEGMENT_ORDER} | {split_name.replace('_', ' ')}"
+
+        plot_training_curve(
+            losses,
+            plot_title,
+            os.path.join(results_dir, f"loss_{file_stem}.png"),
+        )
+        plot_confusion_matrices(
+            train_cm, test_cm,
+            train_m, test_m,
+            train_speed, test_speed,
+            plot_title,
+            os.path.join(results_dir, f"confusion_{file_stem}.png"),
+        )
 
 
 if __name__ == "__main__":
