@@ -29,7 +29,7 @@ experiments therefore start from precomputed embeddings rather than from video.
 
 ## Reading order for someone new
 
-1. [`architecture/BRANCH_DOCUMENTATION.md`](architecture/BRANCH_DOCUMENTATION.md) —
+1. [`architecture/branch_documentation.md`](architecture/branch_documentation.md) —
    the broadest overview of the detection pipeline and the model/architecture decisions
    behind it. **Read this first.**
 2. [`analysis/experiment_summary.md`](analysis/experiment_summary.md) — what has actually
@@ -37,7 +37,7 @@ experiments therefore start from precomputed embeddings rather than from video.
 3. [`analysis/local_global_embedding_analysis.md`](analysis/local_global_embedding_analysis.md) —
    the most complete write-up of findings on the embedding space. (Marked as a first
    draft; citations in it are placeholders and are not yet verified.)
-4. [`guides/PIPELINE_USAGE.md`](guides/PIPELINE_USAGE.md) — how to actually run the
+4. [`guides/pipeline_usage.md`](guides/pipeline_usage.md) — how to actually run the
    training/evaluation pipeline.
 5. [`planning/ideas/`](planning/ideas/) — the open-questions backlog: what would be worth
    trying next.
@@ -169,7 +169,7 @@ relative to it:
 | `main.py` | Orchestrates the AVDeepfake download → segment extraction → embedding generation pipeline |
 | `inspect_hdf5.py` | Prints the structure and contents of an embeddings HDF5 file |
 | `analyze_dataset_split.py` | Reports the real/fake and per-dataset composition of an HDF5 split |
-| `test_model_detailed.py` | Detailed multi-dataset model testing — see [`guides/TEST_SCRIPT_USAGE.md`](guides/TEST_SCRIPT_USAGE.md) |
+| `test_model_detailed.py` | Detailed multi-dataset model testing — see [`guides/test_script_usage.md`](guides/test_script_usage.md) |
 | `QUICK_START_TEST.sh` | Convenience wrapper around `test_model_detailed.py`; expects to be run from root |
 | `test_dropbox_auth.py`, `test_dropbox_client.py` | Manual checks that Dropbox credentials and downloads work |
 
@@ -186,5 +186,9 @@ pip install -e .                  # makes the packages importable from anywhere
 cp configs/config_template.yaml configs/config.yaml   # then fill in credentials
 ```
 
-Note that `.venv/` is **not** in `.gitignore` — avoid `git add -A` at the repository
-root, or use `git add -A -- ':!.venv'`.
+## Conventions
+
+- Documentation filenames are `lowercase_with_underscores.md`. `README.md` is the only
+  exception.
+- Package-level `README.md` files stay beside their code; all other prose lives here.
+- Nothing under `docs/` is read by code, so files here can be renamed or moved freely.

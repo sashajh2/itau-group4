@@ -6,7 +6,7 @@ run it.
 
 | Document | Covers |
 |---|---|
-| [`BRANCH_DOCUMENTATION.md`](BRANCH_DOCUMENTATION.md) | **Start here.** Overview of the deepfake detection pipeline: orthogonal embedding heads, the heterogeneous (identity) head and its two training stages, episodic learning, and evaluation on raw embeddings without training. |
+| [`branch_documentation.md`](branch_documentation.md) | **Start here.** Overview of the deepfake detection pipeline: orthogonal embedding heads, the heterogeneous (identity) head and its two training stages, episodic learning, and evaluation on raw embeddings without training. |
 | [`parameter_breakdown.md`](parameter_breakdown.md) | Where the ~7.5M parameters of `AVTemporalModel` actually go, layer by layer — useful when deciding what to shrink. |
 
 ## `time_series/`
@@ -17,9 +17,9 @@ audio+video embedding sequences.
 
 | Document | Covers |
 |---|---|
-| [`time_series/TIME_SERIES_MODEL_EXPLANATION.md`](time_series/TIME_SERIES_MODEL_EXPLANATION.md) | The model end to end: problem statement, architecture, data flow |
-| [`time_series/TRANSFORMER_WALKTHROUGH.md`](time_series/TRANSFORMER_WALKTHROUGH.md) | A step-by-step walkthrough of the same model, tensor shape by tensor shape. Note it is an AV *fusion* model — it expects both modalities. |
-| [`time_series/PATCH_TOKENIZATION_EXPLAINED.md`](time_series/PATCH_TOKENIZATION_EXPLAINED.md) | Deep dive on patch tokenization: why it is used here, its cost/benefit, and the alternatives |
+| [`time_series/time_series_model_explanation.md`](time_series/time_series_model_explanation.md) | The model end to end: problem statement, architecture, data flow |
+| [`time_series/transformer_walkthrough.md`](time_series/transformer_walkthrough.md) | A step-by-step walkthrough of the same model, tensor shape by tensor shape. Note it is an AV *fusion* model — it expects both modalities. |
+| [`time_series/patch_tokenization_explained.md`](time_series/patch_tokenization_explained.md) | Deep dive on patch tokenization: why it is used here, its cost/benefit, and the alternatives |
 
 ## `disentangled/`
 

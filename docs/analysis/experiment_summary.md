@@ -28,13 +28,13 @@ but encoded differently — not in the direction of the mean.
 - Performed well — no collapse
 
 **LSTM — Concatenated (HuBERT + OpenL3 + SENet, 3328-dim)** (same setup)
-- Results in `results/lstm/`
+- Results in `results/sequence_models/lstm/`
 
 **Transformer — 5-fold and 3-fold k-fold CV** (HuBERT, multiple runs, checkpoints saved)
 - Extensive cross-validation with saved `.pt` checkpoints
 
 **Transformer — Cross-dataset** (train on AVDeepFake1M, test on ShareVeo3, HuBERT)
-- Results in `results/transformer/`
+- Results in `results/sequence_models/transformer/`
 
 ---
 

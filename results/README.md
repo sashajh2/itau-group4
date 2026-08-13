@@ -37,10 +37,11 @@ directory contains `conservative/`, `moderate/`, `aggressive/` subdirectories an
 
 ## Known stale paths after the regrouping
 
-Nothing here is imported, so no code was broken at import time. But a handful of scripts
-hardcode `results/` paths and now point at the old flat locations. Each is a one-line
-fix, left undone deliberately so that this reorganization changed **only** file
-locations, never file contents:
+Nothing here is imported, so no code was broken at import time. Path references inside
+`docs/` were updated to the new locations. But a handful of **scripts** still hardcode
+the old flat `results/` paths. Each is a one-line fix, left undone deliberately: the
+reorganization did not change any Python source, so no runtime behavior shifted
+underneath you.
 
 | File | Line | Points at | Should now be |
 |---|---|---|---|

@@ -72,7 +72,7 @@ The pipeline includes 3 pre-defined configs focused on variance regularization:
 ## Output Structure
 
 ```
-results/pipeline_sweep_001/
+results/disentangled/pipeline_sweep_001/
 ├── all_results.json              # Combined results for all configs
 ├── conservative/
 │   ├── best_model.pt            # Trained model

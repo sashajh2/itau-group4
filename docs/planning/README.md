@@ -6,7 +6,7 @@ what has already been run, see [`../analysis/`](../analysis/).
 | Document | Covers |
 |---|---|
 | [`hybrid_anomaly_detection_plan.md`](hybrid_anomaly_detection_plan.md) | Proposal for a temporal encoder trained with combined reconstruction + contrastive objectives to learn the "real manifold", aiming to generalize to unseen fake types (Sora, future methods) |
-| [`PIPELINE_REFACTORING_PLAN.md`](PIPELINE_REFACTORING_PLAN.md) | The plan behind the current unified train+eval pipeline: shared data loading, hyperparameter sweeps, variance-regularization focus. Largely carried out — see [`../refactoring/`](../refactoring/). |
+| [`pipeline_refactoring_plan.md`](pipeline_refactoring_plan.md) | The plan behind the current unified train+eval pipeline: shared data loading, hyperparameter sweeps, variance-regularization focus. Largely carried out — see [`../refactoring/`](../refactoring/). |
 
 ## `ideas/` — the open backlog
 

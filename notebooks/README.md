@@ -5,7 +5,6 @@
 | [`embedding_experiments/`](embedding_experiments/) | Per-model stratified evaluation notebooks, split by modality: `audio/` (HuBERT, wav2vec2, MFCC), `video/` (SENet, ArcFace, FaceNet, MagFace, MARLIN), `forensic/` |
 | [`colab/`](colab/) | Google Colab notebooks for training and testing the time-series models on GPU |
 | [`exploration/`](exploration/) | Ad-hoc exploratory notebooks: audio, video, and forensic embedding tests, plus `deepfake_realtrace.ipynb` |
-| [`ensemble/`](ensemble/) | Ensemble setup notebook |
 
 ## Colab notebooks
 
@@ -23,13 +22,19 @@ Drive and update `DRIVE_MODEL_PATH` at the top of the notebook.
 
 Checkpoints are not interchangeable between the Transformer and the CNN.
 
-## Two versions of `Ensemble_Setup.ipynb`
+## A note on `Ensemble_Setup.ipynb`
 
-There are two files with this name and they have **different contents** — this is not a
-duplicate:
+A second copy of this notebook used to sit at the repository root. It was a 6-cell
+Colab skeleton and a strict subset of
+[`embedding_experiments/Ensemble_Setup.ipynb`](embedding_experiments/Ensemble_Setup.ipynb)
+(22 cells), which supersedes it: same threshold and data-splitting helpers, a newer
+`LogisticModule` that takes `max_iters`, and the full ensemble pipeline — hard/soft
+voting plus the random-forest ensemble — that the skeleton lacked entirely.
 
-- `ensemble/Ensemble_Setup.ipynb` — the copy that was at the repository root
-- `embedding_experiments/Ensemble_Setup.ipynb` — the copy that was already in this folder
+The skeleton was deleted during the repository reorganization. Recover it from git
+history if needed:
 
-Neither was deleted, since it is not clear which supersedes the other. Diff them before
-relying on either.
+```bash
+git log --oneline --diff-filter=D -- notebooks/ensemble/Ensemble_Setup.ipynb
+git show <commit>^:notebooks/ensemble/Ensemble_Setup.ipynb > Ensemble_Setup_old.ipynb
+```

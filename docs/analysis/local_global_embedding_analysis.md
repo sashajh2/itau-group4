@@ -90,7 +90,7 @@ the local structure that the global view averages away.
 
 1. **A local/global analysis protocol** for frozen audiovisual embeddings, implemented over an
    HDF5 corpus of 0.15 s segment embeddings with content-group and per-timestamp annotations
-   (§4, [embeddings/analyzer.py](../embeddings/analyzer.py), [embeddings/metrics.py](../embeddings/metrics.py)).
+   (§4, [embeddings/analyzer.py](../../embeddings/analyzer.py), [embeddings/metrics.py](../../embeddings/metrics.py)).
 2. **The central empirical result**: authenticity is locally separable and globally entangled in
    HuBERT, OpenL3, and SENet, with the size of the gap differing sharply by encoder and modality
    (§5.1–5.3).
@@ -254,23 +254,23 @@ Computed over the pooled embedding set (all videos, all augmentations, all times
 
 - **Global PCA.** PCA fit on a class-balanced sample of up to 50,000 vectors; first two
   components visualized with points coloured by label
-  ([`fit_global_pca`, `plot_global_pca`](../embeddings/analyzer.py)).
+  ([`fit_global_pca`, `plot_global_pca`](../../embeddings/analyzer.py)).
 - **Clustering agreement.** k-means with $k=2$ on the pooled embeddings, compared against ground
   truth by AMI and ARI; silhouette computed both against ground-truth labels (`sil_gt`, the
   quantity of interest) and against the k-means assignment (`sil_clusters`, a convergence check).
-  Cosine distance throughout ([training/disentangled/metrics.py](../training/disentangled/metrics.py)).
+  Cosine distance throughout ([training/disentangled/metrics.py](../../training/disentangled/metrics.py)).
 - **Distributional divergence.** KL, Jensen–Shannon, and Wasserstein distances between the real
   and fake distributions of distance-to-real-centroid, histogram-binned at 50 bins.
 - **Separation metrics.** Mean distance of real and of fake samples to the global real centroid;
   their difference (**separation gap**, positive iff fakes are farther); variability ratio.
 - **Pooled linear separability.** Cross-validated logistic regression (stratified $k$-fold,
   $k \le 5$) over the pooled per-timestamp augmentation sets
-  ([`compute_aggregate_statistics`](../embeddings/analyzer.py)).
+  ([`compute_aggregate_statistics`](../../embeddings/analyzer.py)).
 
 ### 4.2 Local metrics
 
 Computed independently for each eligible $(v,t)$ pair and then summarized across the 701 pairs
-([`analyze_single_timestamp`](../embeddings/metrics.py)).
+([`analyze_single_timestamp`](../../embeddings/metrics.py)).
 
 - **Similarity to source.** Mean cosine similarity of real variants to $s_{v,t}$ and of fake
   variants to $s_{v,t}$. Their difference is the **local gap** — the primary local statistic.
@@ -344,7 +344,7 @@ The OpenL3 row is the paradox this paper resolves: **a real/fake centroid cosine
 0.005 — five parts in a thousand, entirely within the noise of the intra-class spread — coexists
 with 82.1% pooled linear separability, matching HuBERT's 82.2% despite HuBERT having a 60×
 larger centroid separation.** In a separate segment-level audio evaluation
-(`results/audio/audio_linear_probe_results.csv`, $n=941$), the same encoder reaches ROC-AUC
+(`results/embedding_analysis/audio/audio_linear_probe_results.csv`, $n=941$), the same encoder reaches ROC-AUC
 **0.976**, above HuBERT's 0.958; a further evaluation on the OpenL3 segment corpus
 (`results/experiment_base_embeddings.json`) reports linear-probe test AUC **0.991** against a
 Mahalanobis AUC of only **0.707** and a 5-way 5-shot accuracy of **0.708**.
@@ -355,7 +355,7 @@ model: it asks whether a point is unusual relative to the pooled real distributi
 relative to local content, and it scores 0.991. The information is there. It is not where the
 global geometry looks for it.
 
-**Figure 1** (`results/baseline/hubert/figures/global_pca_avdeepfake_only_hubert.png`) shows the
+**Figure 1** (`results/embedding_analysis/baseline/hubert/figures/global_pca_avdeepfake_only_hubert.png`) shows the
 qualitative version: 16,046 HuBERT embeddings in the first two principal components, with fakes
 smeared throughout the real manifold rather than occupying any separable lobe. The visible
 structure — the diagonal band, the low-left cluster — tracks content and recording condition, not
@@ -395,7 +395,7 @@ variant in the group. Silhouette picks this up because it compares each point to
 centroid distance cannot, because it averages content-specific directions that do not align
 across groups and therefore cancel.
 
-**Figure 2** (`results/baseline/hubert/figures/exp1_hubert_gqpErbFnbiY_00015_seg13.png`) shows a
+**Figure 2** (`results/embedding_analysis/baseline/hubert/figures/exp1_hubert_gqpErbFnbiY_00015_seg13.png`) shows a
 representative content group at $t = 1.95$ s: real variants at mean cosine similarity 0.987 to the
 source, fakes at 0.148, with the real variants sitting essentially on top of the source point in
 PCA space and the fakes dispersed.
@@ -446,7 +446,7 @@ distances (HuBERT ≫ SENet > OpenL3) would predict downstream ranking. It does 
 
 **Table 5 — Video-level Transformer, stratified fake pool** (600 train / 200 test; 300 real
 AVDeepfake-1M++, 150 + 150 fake from AVDeepfake-1M++ and ShareVeo3; $d_{\text{model}}=256$,
-4 layers, 8 heads, 30 epochs; [transformer_experiments/train_stratified.py](../transformer_experiments/train_stratified.py)).
+4 layers, 8 heads, 30 epochs; [transformer_experiments/train_stratified.py](../../transformer_experiments/train_stratified.py)).
 
 | Encoder | Accuracy | FNR | F1 |
 |---|---|---|---|
@@ -465,8 +465,8 @@ among them should not be over-interpreted **[OPEN]** — single seed, single spl
 intervals. Repeat over seeds before drawing an encoder recommendation. Second, the error
 *profiles* are complementary (HuBERT recall-oriented, OpenL3 precision-oriented), and the
 probability-level correlation between HuBERT and OpenL3 probes is 0.824
-(`results/audio/audio_correlation_matrix.csv`) — high but not saturating. A pairwise analysis
-(`results/audio/pairwise_audio_analysis.csv`) shows the HuBERT ∨ OpenL3 union raises recall from
+(`results/embedding_analysis/audio/audio_correlation_matrix.csv`) — high but not saturating. A pairwise analysis
+(`results/embedding_analysis/audio/pairwise_audio_analysis.csv`) shows the HuBERT ∨ OpenL3 union raises recall from
 0.871 to 0.964 for a 4.8-point FPR cost, the only pairing in that table with a positive F1 gain
 (+0.024). Late fusion is the cheapest available improvement and has not been run at video level.
 
@@ -492,10 +492,10 @@ measurement of how much of the apparent performance was pool composition
 
 **A second, larger inflation comes from ungrouped splits.** A 4-fold MLP over concatenated
 HuBERT+OpenL3+SENet features (3,328-d) at *segment* level reports accuracy 0.9958 ± 0.0003,
-F1 0.855 ± 0.011, and **AUC 0.9887 ± 0.0005** (`results/concat_mlp_oversampling_4fold/metrics.json`).
+F1 0.855 ± 0.011, and **AUC 0.9887 ± 0.0005** (`results/classifiers/concat_mlp_oversampling_4fold/metrics.json`).
 That number should not be quoted as a generalization estimate. The split is
 `StratifiedKFold.split(embeddings, labels)` over segments
-([experiments/concat_mlp_experiment.py:479](../experiments/concat_mlp_experiment.py#L479)) — it
+([experiments/concat_mlp_experiment.py:479](../../experiments/concat_mlp_experiment.py#L479)) — it
 groups by neither video nor augmentation, so segments 0.15 s apart from the *same augmentation of
 the same video* land in train and validation simultaneously. Given §5.2's finding that
 within-content-group structure is the strongest signal in these embeddings, this is close to a
@@ -503,8 +503,8 @@ worst-case leak: the model is being tested on near-duplicates of its training po
 **Re-run with `GroupKFold` on source video id and report the corrected number**; the gap between
 0.989 and the corrected value is itself a result worth publishing.
 
-⚠ The same audit should be applied to the k-fold Transformer runs in `results/transformer/` and to
-`results/seq_len_sweep/` before any of those numbers are cited. **[OPEN]**
+⚠ The same audit should be applied to the k-fold Transformer runs in `results/sequence_models/transformer/` and to
+`results/sequence_models/seq_len_sweep/` before any of those numbers are cited. **[OPEN]**
 
 ### 5.6 Consequence III: converting the local signal into a global one fails
 
@@ -513,7 +513,7 @@ embeddings into a space where all real samples land in one compact region regard
 This is the two-head disentanglement architecture of the parent thesis — a frozen encoder feeding
 $f_{\text{auth}}$ and $f_{\text{id}}$, trained with prototypical contrastive loss on content
 groups (identity), variance minimization over real samples only (authenticity), and a cosine
-orthogonality penalty between the heads ([training/disentangled/losses.py](../training/disentangled/losses.py)).
+orthogonality penalty between the heads ([training/disentangled/losses.py](../../training/disentangled/losses.py)).
 
 It collapses. Table 7 gives the diagnosis.
 
@@ -548,7 +548,7 @@ constant — is reachable. This is hypersphere collapse in the sense of Deep SVD
 remedy.
 
 **Attempted fixes and what they showed** (HuBERT, 20% subset: 59,792 real / 1,389 fake segments;
-20 epochs; `results/fix1a_repulsion/`, `results/fix1_variants/`):
+20 epochs; `results/disentangled/fix1a_repulsion/`, `results/disentangled/fix1_variants/`):
 
 | Variant | Mechanism | Wasserstein | Mean cos(real,real) | Separation gap | Silhouette vs GT | Silhouette vs clusters |
 |---|---|---|---|---|---|---|
@@ -564,7 +564,7 @@ against ground truth is −0.014.** The unbounded repulsion produced two beautif
 clusters that have nothing to do with the labels. Read `sil_clusters` alone and this is the best
 run in the study.
 
-Earlier runs (`ideas/disentanglement_fixes.md`) add a temporal dimension to the failure: the
+Earlier runs (`docs/planning/ideas/disentanglement_fixes.md`) add a temporal dimension to the failure: the
 identity head works well and stably (`sil_clusters` 0.67–0.70 across runs), while the authenticity
 head peaks early and decays — the best run reached `sil_gt` = 0.127 at epoch 7 and fell to 0.090
 by epoch 50, tracking the decay of the orthogonality loss from 0.028 to 0.0004. The cosine
@@ -585,7 +585,7 @@ and the only configuration satisfying the objective is the degenerate one.
 
 If the signal is a per-segment, content-conditional displacement, sequence order should matter
 less than architecture choice implies. The positional-encoding ablation
-([transformer_experiments/compare_pos_encoding.py](../transformer_experiments/compare_pos_encoding.py);
+([transformer_experiments/compare_pos_encoding.py](../../transformer_experiments/compare_pos_encoding.py);
 AVDeepfake-1M++ only, 400 train / 200 test) is consistent with that, though it is confounded by
 the Regime-A collapse of §5.5:
 
@@ -644,7 +644,7 @@ Three concrete recommendations, each earned by a failure in this study:
 2. **Never report cluster-based scores without ground-truth agreement.** §5.6, Fix 1b:
    `sil_clusters` = 0.992 with `sil_gt` = −0.014.
 3. **Do not use the multivariate Cohen's $d$ as implemented.** Our
-   [`cohens_d_multivariate`](../embeddings/metrics.py) divides a $D$-dimensional norm by a mean
+   [`cohens_d_multivariate`](../../embeddings/metrics.py) divides a $D$-dimensional norm by a mean
    per-dimension standard deviation, so it grows like $\sqrt{D}$ and returns values of 24–2,611
    (HuBERT median 89). It orders encoders by dimensionality more than by effect size and should be
    replaced by a proper multivariate effect size (Mahalanobis $D$ with a regularized covariance)
@@ -720,7 +720,7 @@ standard diagnostics report success while they do so.
    profiles and the 0.824 probability correlation.
 9. **If the disentanglement line continues:** Deep SVDD architectural constraints, cross-covariance
    orthogonality with stop-gradient on $z^{\text{id}}$, and VICReg per-dimension variance terms —
-   all specified in `ideas/disentanglement_fixes.md`, none yet run.
+   all specified in `docs/planning/ideas/disentanglement_fixes.md`, none yet run.
 
 ---
 
@@ -728,27 +728,27 @@ standard diagnostics report success while they do so.
 
 | § | Claim | Source file |
 |---|---|---|
-| 3.1 | Corpus sizes | Ch. 3 of parent thesis; `ideas/dataset_combinations.md` |
-| 5.1 T1 (full) | Global HuBERT metrics | `RESULTS_INTERPRETATION.md` (input columns) |
-| 5.1 T1 (subset) | Global HuBERT, 20% | `results/fix1a_repulsion/results.json` → `raw_metrics` |
+| 3.1 | Corpus sizes | Ch. 3 of parent thesis; `docs/planning/ideas/dataset_combinations.md` |
+| 5.1 T1 (full) | Global HuBERT metrics | `docs/analysis/results_interpretation.md` (input columns) |
+| 5.1 T1 (subset) | Global HuBERT, 20% | `results/disentangled/fix1a_repulsion/results.json` → `raw_metrics` |
 | 5.1 T1 (OOD) | Sora2 vs AVDF real | `results/cross_dataset_metrics.json` → `*_input` |
-| 5.1 T2 | Per-encoder global | `results/baseline/{hubert,openl3,senet}/metrics/aggregate_statistics_*.json` |
+| 5.1 T2 | Per-encoder global | `results/embedding_analysis/baseline/{hubert,openl3,senet}/metrics/aggregate_statistics_*.json` |
 | 5.1 | OpenL3 probe/Mahalanobis/few-shot | `results/experiment_base_embeddings.json` |
-| 5.1 | Audio probe AUCs (n=941) | `results/audio/audio_linear_probe_results.csv` |
-| 5.1 Fig 1 | Global PCA | `results/baseline/hubert/figures/global_pca_avdeepfake_only_hubert.png` |
-| 5.2 T3 | All local statistics | `results/baseline/*/metrics/experiment3_aggregate_analysis_*.csv`, n=701 |
-| 5.2 Fig 2 | Content-group example | `results/baseline/hubert/figures/exp1_hubert_gqpErbFnbiY_00015_seg13.png` |
-| 5.4 T5 | Stratified Transformer | `results/transformer_stratified/`; `ideas/experiment_summary.md` |
-| 5.4 | Probe correlation, pairwise union | `results/audio/audio_correlation_matrix.csv`, `results/audio/pairwise_audio_analysis.csv` |
-| 5.5 T6 | Regimes A/B/C | `ideas/experiment_summary.md`; `results/transformer_all_datasets/` |
-| 5.5 | Concat-MLP 4-fold | `results/concat_mlp_oversampling_4fold/metrics.json` |
-| 5.6 T7 | Collapse diagnosis | `RESULTS_INTERPRETATION.md`, `COLLAPSE_ANALYSIS_AND_FIXES.md` |
-| 5.6 | Fix 1a / 1b | `results/fix1a_repulsion/results.json`, `results/fix1_variants/results.json` |
-| 5.6 | Earlier run history | `ideas/disentanglement_fixes.md` |
-| 5.7 | Positional encoding | `results/compare_pos_encoding/compare_{hubert,openl3}_*.png` |
+| 5.1 | Audio probe AUCs (n=941) | `results/embedding_analysis/audio/audio_linear_probe_results.csv` |
+| 5.1 Fig 1 | Global PCA | `results/embedding_analysis/baseline/hubert/figures/global_pca_avdeepfake_only_hubert.png` |
+| 5.2 T3 | All local statistics | `results/embedding_analysis/baseline/*/metrics/experiment3_aggregate_analysis_*.csv`, n=701 |
+| 5.2 Fig 2 | Content-group example | `results/embedding_analysis/baseline/hubert/figures/exp1_hubert_gqpErbFnbiY_00015_seg13.png` |
+| 5.4 T5 | Stratified Transformer | `results/sequence_models/transformer_stratified/`; `docs/analysis/experiment_summary.md` |
+| 5.4 | Probe correlation, pairwise union | `results/embedding_analysis/audio/audio_correlation_matrix.csv`, `results/embedding_analysis/audio/pairwise_audio_analysis.csv` |
+| 5.5 T6 | Regimes A/B/C | `docs/analysis/experiment_summary.md`; `results/sequence_models/transformer_all_datasets/` |
+| 5.5 | Concat-MLP 4-fold | `results/classifiers/concat_mlp_oversampling_4fold/metrics.json` |
+| 5.6 T7 | Collapse diagnosis | `docs/analysis/results_interpretation.md`, `docs/analysis/collapse_analysis_and_fixes.md` |
+| 5.6 | Fix 1a / 1b | `results/disentangled/fix1a_repulsion/results.json`, `results/disentangled/fix1_variants/results.json` |
+| 5.6 | Earlier run history | `docs/planning/ideas/disentanglement_fixes.md` |
+| 5.7 | Positional encoding | `results/sequence_models/compare_pos_encoding/compare_{hubert,openl3}_*.png` |
 
 Local statistics in Table 3 were recomputed from the per-timestamp CSVs by
-[scripts/local_global_stats.py](../scripts/local_global_stats.py) (n=701 rows per encoder), which
+[scripts/local_global_stats.py](../../scripts/local_global_stats.py) (n=701 rows per encoder), which
 I added alongside this draft so the table is reproducible: `python scripts/local_global_stats.py`.
 
 ## Appendix B — Citation checklist

@@ -412,7 +412,7 @@ python3 -m training.disentangled.pipeline \
 ## Output Structure
 
 ```
-results/pipeline_sweep_001/
+results/disentangled/pipeline_sweep_001/
 ├── all_results.json              # Combined results for all configs
 ├── conservative/
 │   ├── best_model.pt            # Trained model

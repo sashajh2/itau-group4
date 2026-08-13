@@ -7,8 +7,8 @@ files (plots, CSVs, metrics JSON) live in [`../../results/`](../../results/).
 |---|---|
 | [`experiment_summary.md`](experiment_summary.md) | **Start here.** Phase-by-phase log of everything tried so far and how each attempt turned out. The fastest way to catch up. |
 | [`local_global_embedding_analysis.md`](local_global_embedding_analysis.md) | The most complete write-up: local and global structure of pretrained embeddings for audiovisual deepfake detection. See the caveats below. |
-| [`COLLAPSE_ANALYSIS_AND_FIXES.md`](COLLAPSE_ANALYSIS_AND_FIXES.md) | Diagnosis of embedding collapse during disentangled training — the symptoms (Wasserstein distance 0.533 → 0.002, intra-group variance −99.8%), the causes, and proposed fixes |
-| [`RESULTS_INTERPRETATION.md`](RESULTS_INTERPRETATION.md) | Reading of the "conservative" hyperparameter config results, which still collapsed. A worked example of how to interpret the metrics the pipeline emits. |
+| [`collapse_analysis_and_fixes.md`](collapse_analysis_and_fixes.md) | Diagnosis of embedding collapse during disentangled training — the symptoms (Wasserstein distance 0.533 → 0.002, intra-group variance −99.8%), the causes, and proposed fixes |
+| [`results_interpretation.md`](results_interpretation.md) | Reading of the "conservative" hyperparameter config results, which still collapsed. A worked example of how to interpret the metrics the pipeline emits. |
 
 ## Caveats on `local_global_embedding_analysis.md`
 
@@ -27,4 +27,4 @@ The document states these itself, but they are worth surfacing before anyone bui
 - The proposed follow-ups to the collapse findings are in
   [`../planning/ideas/disentanglement_fixes.md`](../planning/ideas/disentanglement_fixes.md).
 - What was changed in response is recorded in
-  [`../refactoring/IMPROVEMENTS.md`](../refactoring/IMPROVEMENTS.md).
+  [`../refactoring/improvements.md`](../refactoring/improvements.md).
