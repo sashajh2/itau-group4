@@ -223,11 +223,16 @@ def sample_train_test_no_overlap(
     n_test_fake: int,
     seed: int = 42,
     embedding_keys: Tuple[str, ...] = ("hubert",),
+    dataset_filter: Optional[str] = None,
 ) -> Tuple[List[Dict], List[Dict]]:
     """Sample train and test sets with strict video-level separation.
 
     Splits the video pool before sampling augmentations, so no video_id
     can appear in both train and test.
+
+    Args:
+        dataset_filter: If set, only include videos from this dataset
+                        (e.g. "avdeepfake1m").
 
     Returns:
         (train_samples, test_samples)
@@ -241,6 +246,14 @@ def sample_train_test_no_overlap(
         videos_grp = f["videos"]
         for safe_id in videos_grp.keys():
             vid = videos_grp[safe_id]
+
+            if dataset_filter is not None:
+                ds = vid.attrs.get("dataset", b"")
+                if isinstance(ds, bytes):
+                    ds = ds.decode()
+                if ds != dataset_filter:
+                    continue
+
             aug_types = vid["augmentation_info"]["types"][:]
             aug_types = [t.decode() if isinstance(t, bytes) else t for t in aug_types]
 
