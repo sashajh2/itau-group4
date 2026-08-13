@@ -350,7 +350,7 @@ def main():
     print(f"Device: {device}")
     print(f"Dataset: {DATASET}  |  Total samples: {N_TOTAL}  |  Train/Test: {N_TRAIN_PER_CLASS*2}/{N_TEST_PER_CLASS*2}")
 
-    results_dir = os.path.join("results", "transformer_single_embedding")
+    results_dir = os.path.join("results", "sequence_models", "transformer_single_embedding")
     os.makedirs(results_dir, exist_ok=True)
 
     all_results = []

@@ -1,6 +1,6 @@
 import csv, statistics as st
 
-base = '/Users/ricardocarrillo/Desktop/Itau_UROP/itau-group4/results/baseline'
+base = '/Users/ricardocarrillo/Desktop/Itau_UROP/itau-group4/results/embedding_analysis/baseline'
 cols = ['mean_cos_sim_real_to_source', 'mean_cos_sim_fake_to_source',
         'intra_real_cohesion', 'intra_fake_cohesion', 'inter_group_separation',
         'silhouette_score', 'centroid_cosine_distance',

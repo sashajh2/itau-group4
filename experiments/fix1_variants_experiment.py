@@ -46,7 +46,7 @@ from scipy.spatial.distance import jensenshannon
 # ── Config ─────────────────────────────────────────────────────────────────────
 _REPO            = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NPZ_PATH         = os.path.join(_REPO, "exports/avdeepfake_20pct_embeddings.npz")
-SAVE_DIR         = os.path.join(_REPO, "results/fix1_variants")
+SAVE_DIR         = os.path.join(_REPO, "results/disentangled/fix1_variants")
 REPULSION_MARGIN = 0.50        # fix1a only
 VAL_FRAC         = 0.20
 BATCH_SIZE       = 128

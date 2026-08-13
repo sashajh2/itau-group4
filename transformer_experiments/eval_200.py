@@ -26,13 +26,13 @@ from transformer_experiments.model import VanillaTransformerClassifier
 
 # ── Config ────────────────────────────────────────────────────────────────────
 HDF5_PATH       = "exports/deepfake_embeddings.h5"
-CHECKPOINTS_DIR = os.path.join("results", "transformer")
+CHECKPOINTS_DIR = os.path.join("results", "sequence_models", "transformer")
 
 # Set to a specific .pt path to override auto-detection, e.g.:
-#   CHECKPOINT_OVERRIDE = "results/transformer/kfold_5fold_hubert_fold5_20260326_160521.pt"
+#   CHECKPOINT_OVERRIDE = "results/sequence_models/transformer/kfold_5fold_hubert_fold5_20260326_160521.pt"
 # Leave as None to use the most recently modified checkpoint.
-CHECKPOINT_OVERRIDE = "results/transformer/kfold_5fold_hubert_fold5_20260326_160521.pt"
-RESULTS_DIR     = os.path.join("results", "eval_200")
+CHECKPOINT_OVERRIDE = "results/sequence_models/transformer/kfold_5fold_hubert_fold5_20260326_160521.pt"
+RESULTS_DIR     = os.path.join("results", "sequence_models", "eval_200")
 
 N_SAMPLES_PER_CLASS = 100   # 100 real + 100 fake = 200 total
 BATCH_SIZE          = 8

@@ -314,7 +314,7 @@ def main():
 
     # ── Save plots ────────────────────────────────────────────────────────
     from datetime import datetime
-    results_dir = os.path.join("results", "lstm")
+    results_dir = os.path.join("results", "sequence_models", "lstm")
     os.makedirs(results_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

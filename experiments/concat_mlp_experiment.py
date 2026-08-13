@@ -43,7 +43,7 @@ np.random.seed(42)
 # Configuration
 # ==============================================================================
 HDF5_PATH = "exports/deepfake_embeddings_2.h5"  # Adjust path as needed or Colab
-RESULTS_DIR = "results/concat_mlp"
+RESULTS_DIR = "results/classifiers/concat_mlp"
 BATCH_SIZE = 256
 NUM_EPOCHS = 30
 LEARNING_RATE = 1e-3

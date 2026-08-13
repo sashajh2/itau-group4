@@ -17,7 +17,7 @@ from sklearn.manifold import TSNE
 from datetime import datetime
 
 HDF5_PATH  = "exports/deepfake_embeddings.h5"
-RESULTS_DIR = os.path.join("results", "tsne")
+RESULTS_DIR = os.path.join("results", "embedding_analysis", "tsne")
 MAX_SEGS   = 20000   # cap to keep t-SNE tractable
 SEED       = 42
 

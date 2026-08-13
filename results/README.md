@@ -35,26 +35,37 @@ directory contains `conservative/`, `moderate/`, `aggressive/` subdirectories an
 **`classifiers/`** — `concat_mlp`, `concat_mlp_class_weights`, `concat_mlp_oversampling`,
 `concat_mlp_oversampling_4fold`, `mlp_classifier`.
 
-## Known stale paths after the regrouping
+## Where scripts write
 
-Nothing here is imported, so no code was broken at import time. Path references inside
-`docs/` were updated to the new locations. But a handful of **scripts** still hardcode
-the old flat `results/` paths. Each is a one-line fix, left undone deliberately: the
-reorganization did not change any Python source, so no runtime behavior shifted
-underneath you.
+Every script that reads from or writes into `results/` was updated to the grouped
+layout, so re-running anything lands in the right place rather than recreating a
+top-level directory. Output directories are created with `exist_ok=True` and parents, so
+the deeper paths need no setup.
 
-| File | Line | Points at | Should now be |
-|---|---|---|---|
-| `transformer_experiments/eval_200.py` | 34 | `results/transformer/kfold_5fold_hubert_fold5_….pt` | `results/sequence_models/transformer/…` |
-| `scripts/inspect_predictions.py` | 30–34 | five `results/transformer/kfold_5fold_hubert_fold*.pt` | `results/sequence_models/transformer/…` |
-| `scripts/local_global_stats.py` | 3 | absolute path ending `…/results/baseline` | `…/results/embedding_analysis/baseline` |
+| Writes into | Script |
+|---|---|
+| `sequence_models/transformer/` | `transformer_experiments/train.py`, `train_kfold.py`, `train_cross_dataset.py` |
+| `sequence_models/transformer_stratified/` | `transformer_experiments/train_stratified.py` |
+| `sequence_models/transformer_all_datasets/` | `transformer_experiments/train_all_datasets.py` |
+| `sequence_models/transformer_single_embedding/` | `transformer_experiments/train_single_embedding.py` |
+| `sequence_models/compare_pos_encoding/` | `transformer_experiments/compare_pos_encoding.py` |
+| `sequence_models/seq_len_sweep/` | `transformer_experiments/test_kfold.py` |
+| `sequence_models/eval_200/` | `transformer_experiments/eval_200.py` |
+| `sequence_models/lstm/` | `transformer_experiments/lstm_train_hub.py`, `lstm_train_concat.py` |
+| `classifiers/concat_mlp/` | `experiments/concat_mlp_experiment.py` |
+| `classifiers/mlp_classifier/` | `experiments/train_mlp_classifier.py` |
+| `disentangled/fix1_variants/` | `experiments/fix1_variants_experiment.py` |
+| `disentangled/fix1a_repulsion/` | `experiments/fix1a_repulsion_experiment.py` |
+| `embedding_analysis/baseline/` | `scripts/run_baseline_experiments.py` (`--output-dir` default) |
+| `embedding_analysis/tsne/` | `scripts/tsne_openl3.py` |
+| *(caller's choice)* | `training/disentangled/pipeline.py` — `--output-dir` is required |
 
-All three reference gitignored `.pt` checkpoints that are not in the repository anyway,
-so they already required a local re-run to be useful.
+Three scripts also *read* checkpoints from `sequence_models/transformer/`:
+`transformer_experiments/eval_200.py`, `transformer_experiments/test_kfold.py`, and
+`scripts/inspect_predictions.py`. They name specific timestamped `.pt` files which are
+gitignored and therefore absent from a fresh clone — re-run the corresponding training
+script to regenerate them, then update the filenames at the top of each script.
 
-Scripts that *write* into `results/` — `experiments/fix1_variants_experiment.py`,
-`experiments/fix1a_repulsion_experiment.py`, `experiments/concat_mlp_experiment.py`,
-`experiments/train_mlp_classifier.py`, `scripts/run_baseline_experiments.py` — still
-have their old flat output paths. They will not fail; they will simply recreate a
-top-level directory such as `results/fix1_variants/` on the next run. Update their
-output-directory constants when convenient.
+`scripts/local_global_stats.py` reads `embedding_analysis/baseline/` through a hardcoded
+absolute path containing a user's home directory; change it to a relative path or your
+own before running.

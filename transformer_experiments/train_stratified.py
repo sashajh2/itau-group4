@@ -385,7 +385,7 @@ def main():
     print(f"Fake sampling: {N_TRAIN_FAKE_PER_DS} train + {N_TEST_FAKE_PER_DS} test per dataset "
           f"({', '.join(FAKE_DATASETS)})")
 
-    results_dir = os.path.join("results", "transformer_stratified")
+    results_dir = os.path.join("results", "sequence_models", "transformer_stratified")
     os.makedirs(results_dir, exist_ok=True)
 
     all_results = []

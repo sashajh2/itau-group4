@@ -336,7 +336,7 @@ def main():
     print(f"Device: {device}")
     print(f"Dataset: AVDeepFake1M only  |  Train: {N_TRAIN_REAL+N_TRAIN_FAKE}  |  Test: {N_TEST_REAL+N_TEST_FAKE}")
 
-    results_dir = os.path.join("results", "compare_pos_encoding")
+    results_dir = os.path.join("results", "sequence_models", "compare_pos_encoding")
     os.makedirs(results_dir, exist_ok=True)
 
     all_results = []

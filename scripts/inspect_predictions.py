@@ -27,13 +27,13 @@ from transformer_experiments.model import VanillaTransformerClassifier
 # ── Config ─────────────────────────────────────────────────────────────────────
 HDF5_PATH = "exports/deepfake_embeddings.h5"
 CHECKPOINTS = [
-    "results/transformer/kfold_5fold_hubert_fold1_20260326_154738.pt",
-    "results/transformer/kfold_5fold_hubert_fold2_20260326_155151.pt",
-    "results/transformer/kfold_5fold_hubert_fold3_20260326_155606.pt",
-    "results/transformer/kfold_5fold_hubert_fold4_20260326_160013.pt",
-    "results/transformer/kfold_5fold_hubert_fold5_20260326_160521.pt",
+    "results/sequence_models/transformer/kfold_5fold_hubert_fold1_20260326_154738.pt",
+    "results/sequence_models/transformer/kfold_5fold_hubert_fold2_20260326_155151.pt",
+    "results/sequence_models/transformer/kfold_5fold_hubert_fold3_20260326_155606.pt",
+    "results/sequence_models/transformer/kfold_5fold_hubert_fold4_20260326_160013.pt",
+    "results/sequence_models/transformer/kfold_5fold_hubert_fold5_20260326_160521.pt",
 ]
-OUT_DIR = "results/inspect_20260326_144046"
+OUT_DIR = "results/sequence_models/inspect_20260326_144046"
 SEQ_LEN = 256
 BATCH_SIZE = 8
 # ───────────────────────────────────────────────────────────────────────────────

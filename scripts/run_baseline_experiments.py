@@ -282,8 +282,8 @@ Examples:
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='results/baseline',
-        help='Base output directory (default: results/baseline)'
+        default='results/embedding_analysis/baseline',
+        help='Base output directory (default: results/embedding_analysis/baseline)'
     )
     
     args = parser.parse_args()

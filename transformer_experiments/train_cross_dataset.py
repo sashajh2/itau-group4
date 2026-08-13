@@ -155,7 +155,7 @@ def main():
     test_cm  = full_evaluation(model, test_loader,  test_samples,  device, "TEST")
 
     # ── Save ──────────────────────────────────────────────────────────────
-    results_dir = os.path.join("results", "transformer")
+    results_dir = os.path.join("results", "sequence_models", "transformer")
     os.makedirs(results_dir, exist_ok=True)
     emb_tag   = "_".join(EMBEDDING_KEYS)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -276,7 +276,7 @@ def main():
     # Configuration
     hdf5_path = 'exports/deepfake_embeddings_2.h5'
     embedding_type = 'hubert'  # 'hubert', 'openl3', or 'senet'
-    output_dir = 'results/mlp_classifier'
+    output_dir = 'results/classifiers/mlp_classifier'
 
     hidden_dims = [256, 128]
     batch_size = 256

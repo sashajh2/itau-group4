@@ -41,11 +41,11 @@ from transformer_experiments.model import VanillaTransformerClassifier
 
 # ── Config ────────────────────────────────────────────────────────────────────
 HDF5_PATH = "exports/deepfake_embeddings.h5"
-CHECKPOINTS_DIR = os.path.join("results", "transformer")
-RESULTS_DIR = os.path.join("results", "seq_len_sweep")
+CHECKPOINTS_DIR = os.path.join("results", "sequence_models", "transformer")
+RESULTS_DIR = os.path.join("results", "sequence_models", "seq_len_sweep")
 
 # Set to a list of explicit paths to override auto-detection, e.g.:
-#   CHECKPOINTS = ["results/transformer/kfold_5fold_hubert_fold1_....pt", ...]
+#   CHECKPOINTS = ["results/sequence_models/transformer/kfold_5fold_hubert_fold1_....pt", ...]
 # Leave as None to use the latest complete checkpoint group automatically.
 CHECKPOINTS = None
 

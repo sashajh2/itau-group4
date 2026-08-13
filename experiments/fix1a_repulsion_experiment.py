@@ -71,7 +71,7 @@ LAMBDA_VAR     = 1.0           # raw weight before EqualWeightNormalizer scales
 LAMBDA_ORTH    = 1.0
 LAMBDA_REPEL   = 1.0           # raw weight for repulsion; normalizer handles scaling
 SEED           = 42
-SAVE_DIR       = "results/fix1a_repulsion"
+SAVE_DIR       = "results/disentangled/fix1a_repulsion"
 MAX_EVAL_SAMPLES = 5000        # cap for metric computation speed
 
 # ── Reproducibility ───────────────────────────────────────────────────────────

@@ -403,7 +403,7 @@ def main():
     print(f"Total samples: {N_REAL + N_FAKE}  |  Train: {N_TRAIN_PER_CLASS*2}  |  Test: {N_TEST_PER_CLASS*2}")
     print(f"Dataset filter: NONE (all datasets)")
 
-    results_dir = os.path.join("results", "transformer_all_datasets")
+    results_dir = os.path.join("results", "sequence_models", "transformer_all_datasets")
     os.makedirs(results_dir, exist_ok=True)
 
     all_results = []

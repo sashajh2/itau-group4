@@ -95,7 +95,7 @@ def run_fold(
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
-    results_dir = os.path.join("results", "transformer")
+    results_dir = os.path.join("results", "sequence_models", "transformer")
     os.makedirs(results_dir, exist_ok=True)
     emb_tag   = "_".join(EMBEDDING_KEYS)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -288,7 +288,7 @@ def main():
     long_stats  = print_cm_stats(long_cm,  "Long  videos")
 
     # ── Save plots ────────────────────────────────────────────────────────
-    results_dir = os.path.join("results", "transformer")
+    results_dir = os.path.join("results", "sequence_models", "transformer")
     os.makedirs(results_dir, exist_ok=True)
     emb_tag   = "_".join(EMBEDDING_KEYS)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
