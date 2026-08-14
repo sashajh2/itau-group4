@@ -4,7 +4,7 @@
 |---|---|
 | [`embedding_experiments/`](embedding_experiments/) | Per-model stratified evaluation notebooks, split by modality: `audio/` (HuBERT, wav2vec2, MFCC), `video/` (SENet, ArcFace, FaceNet, MagFace, MARLIN), `forensic/` |
 | [`colab/`](colab/) | Google Colab notebooks for training and testing the time-series models on GPU |
-| [`exploration/`](exploration/) | Ad-hoc exploratory notebooks: audio, video, and forensic embedding tests, plus `deepfake_realtrace.ipynb` |
+| [`exploration/`](exploration/) | Ad-hoc exploratory notebooks: audio, video, and forensic embedding tests, `deepfake_realtrace.ipynb`, and `deepfake_embeddings_2.ipynb` (LSTM over the 3328-d concatenation of all three embeddings) |
 
 ## Colab notebooks
 

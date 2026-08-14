@@ -42,14 +42,14 @@ REPO = "/Users/ricardocarrillo/Desktop/Itau_UROP/itau-group4"
 NPZ_PATH = os.path.join(REPO, "exports/avdeepfake_20pct_embeddings.npz")
 SEED = 42
 VAL_FRAC = 0.20
-SAVE_DIR = "results/fix1_probe"
+SAVE_DIR = "results/disentangled/fix1_probe"
 
 CHECKPOINTS = {
     # label -> checkpoint path (None = raw HuBERT input, no projection)
     "Raw HuBERT":       None,
-    "Baseline z_auth":  os.path.join(REPO, "results/fix1_variants/baseline_model.pt"),
-    "Fix1a z_auth":     os.path.join(REPO, "results/fix1a_repulsion/fix1a_model.pt"),
-    "Fix1b z_auth":     os.path.join(REPO, "results/fix1_variants/fix1b_model.pt"),
+    "Baseline z_auth":  os.path.join(REPO, "results/disentangled/fix1_variants/baseline_model.pt"),
+    "Fix1a z_auth":     os.path.join(REPO, "results/disentangled/fix1a_repulsion/fix1a_model.pt"),
+    "Fix1b z_auth":     os.path.join(REPO, "results/disentangled/fix1_variants/fix1b_model.pt"),
 }
 
 

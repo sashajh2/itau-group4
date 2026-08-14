@@ -28,12 +28,14 @@ real/fake breakdown per content group, output of
 `transformer_stratified`, `compare_pos_encoding`, `seq_len_sweep`, `eval_200`, `lstm`.
 
 **`disentangled/`** — `pipeline_sweep_001`, `senet_pipeline_sweep_001`,
-`pipeline_aggressive`, `train_only`, `fix1_variants`, `fix1a_repulsion`. Each sweep
+`pipeline_aggressive`, `train_only`, `fix1_variants`, `fix1a_repulsion`, `fix1_probe`
+(logistic and linear-vs-nonlinear probes of the fix1 `z_auth` embeddings). Each sweep
 directory contains `conservative/`, `moderate/`, `aggressive/` subdirectories and an
 `all_results.json`.
 
 **`classifiers/`** — `concat_mlp`, `concat_mlp_class_weights`, `concat_mlp_oversampling`,
-`concat_mlp_oversampling_4fold`, `mlp_classifier`.
+`concat_mlp_oversampling_4fold`, `mlp_classifier`, `ensemble` (Hard-OR voting and a
+random-forest meta-learner over the three per-modality logistic probes).
 
 ## Where scripts write
 
@@ -58,6 +60,8 @@ the deeper paths need no setup.
 | `disentangled/fix1a_repulsion/` | `experiments/fix1a_repulsion_experiment.py` |
 | `embedding_analysis/baseline/` | `scripts/run_baseline_experiments.py` (`--output-dir` default) |
 | `embedding_analysis/tsne/` | `scripts/tsne_openl3.py` |
+| `classifiers/ensemble/` | `scripts/plot_ensemble_results.py` |
+| `disentangled/fix1_probe/` | `scripts/probe_fix1_embeddings.py` |
 | *(caller's choice)* | `training/disentangled/pipeline.py` — `--output-dir` is required |
 
 Three scripts also *read* checkpoints from `sequence_models/transformer/`:

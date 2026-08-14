@@ -25,9 +25,9 @@ NPZ = os.path.join(REPO, "exports/avdeepfake_20pct_embeddings.npz")
 SEED, VAL_FRAC = 42, 0.20
 CKPTS = {
     "Raw HuBERT":      None,
-    "Baseline z_auth": os.path.join(REPO, "results/fix1_variants/baseline_model.pt"),
-    "Fix1a z_auth":    os.path.join(REPO, "results/fix1a_repulsion/fix1a_model.pt"),
-    "Fix1b z_auth":    os.path.join(REPO, "results/fix1_variants/fix1b_model.pt"),
+    "Baseline z_auth": os.path.join(REPO, "results/disentangled/fix1_variants/baseline_model.pt"),
+    "Fix1a z_auth":    os.path.join(REPO, "results/disentangled/fix1a_repulsion/fix1a_model.pt"),
+    "Fix1b z_auth":    os.path.join(REPO, "results/disentangled/fix1_variants/fix1b_model.pt"),
 }
 
 
