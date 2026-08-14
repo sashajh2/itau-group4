@@ -31,10 +31,11 @@ Colab skeleton and a strict subset of
 `LogisticModule` that takes `max_iters`, and the full ensemble pipeline — hard/soft
 voting plus the random-forest ensemble — that the skeleton lacked entirely.
 
-The skeleton was deleted during the repository reorganization. Recover it from git
-history if needed:
+The skeleton was deleted during the repository reorganization, so nothing is lost by its
+absence — the version kept here does everything it did and more. It survives only in the
+history of the original git repository (as `notebooks/ensemble/Ensemble_Setup.ipynb`),
+which is not part of this snapshot; ask whoever maintains that repository if you ever
+need it.
 
-```bash
-git log --oneline --diff-filter=D -- notebooks/ensemble/Ensemble_Setup.ipynb
-git show <commit>^:notebooks/ensemble/Ensemble_Setup.ipynb > Ensemble_Setup_old.ipynb
-```
+`scripts/plot_ensemble_results.py` plots the numbers from cells 18 and 20 of the
+notebook kept here, which is a good cross-check that you are looking at the right one.

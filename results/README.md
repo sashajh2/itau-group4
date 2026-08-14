@@ -3,7 +3,7 @@
 Experiment outputs — plots, metrics JSON, CSVs, and model checkpoints. Previously 35 flat
 sibling directories; now grouped by the kind of experiment that produced them.
 
-**Model checkpoints (`*.pt`) are gitignored**, so a fresh clone has the plots and metrics
+**Model checkpoints (`*.pt`) are gitignored**, so this snapshot has the plots and metrics
 but not the weights. Anything that needs weights must be re-run.
 
 | Group | What is in it | Produced by |
@@ -67,7 +67,7 @@ the deeper paths need no setup.
 Three scripts also *read* checkpoints from `sequence_models/transformer/`:
 `transformer_experiments/eval_200.py`, `transformer_experiments/test_kfold.py`, and
 `scripts/inspect_predictions.py`. They name specific timestamped `.pt` files which are
-gitignored and therefore absent from a fresh clone — re-run the corresponding training
+gitignored and therefore absent from this snapshot — re-run the corresponding training
 script to regenerate them, then update the filenames at the top of each script.
 
 `scripts/local_global_stats.py` reads `embedding_analysis/baseline/` through a hardcoded
