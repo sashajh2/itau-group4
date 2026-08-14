@@ -66,8 +66,8 @@ for spine in ["top", "right"]:
     ax.spines[spine].set_visible(False)
 
 fig.tight_layout()
-out = "results/ensemble/ensemble_results.png"
+out = "results/classifiers/ensemble/ensemble_results.png"
 import os
-os.makedirs("results/ensemble", exist_ok=True)
+os.makedirs("results/classifiers/ensemble", exist_ok=True)
 fig.savefig(out, dpi=200, bbox_inches="tight")
 print(f"Saved {out}")

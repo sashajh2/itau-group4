@@ -46,9 +46,9 @@ def variance_loss(z_auth: torch.Tensor, is_real: torch.Tensor,
     # L_reg_linear = max(0, min_variance - variance)  (stronger gradient when variance is low)
     regularization_quad = torch.clamp(min_variance - variance, min=0.0) ** 2
     regularization_linear = torch.clamp(min_variance - variance, min=0.0)
-    
+
     # Combine: quadratic for smoothness, linear for strength when variance is very low
-    regularization = regularization_quad + 5.0 * regularization_linear
+    regularization = regularization_quad + 5.0 * regularization_linear # Where did this 5.0 come from?
     
     loss = variance + regularization_weight * regularization
     
@@ -396,7 +396,7 @@ def compute_total_loss(
     z_auth: torch.Tensor,
     is_real: torch.Tensor,
     content_groups: torch.Tensor,
-    lambda_var: float = 0.5,
+    lambda_var: float = 0, # test without the effect of the variance loss
     lambda_orth: float = 0.1,
     temperature: float = 0.1,
     min_variance: float = 0.01,

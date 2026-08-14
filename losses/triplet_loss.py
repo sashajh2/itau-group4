@@ -1,1 +1,0 @@
-# Standard triplet loss implementation for alternative contrastive training.

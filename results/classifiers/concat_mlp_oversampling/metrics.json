@@ -1,0 +1,11 @@
+{
+  "best_val_f1": 0.8531745672225952,
+  "final_train_acc": 0.9999068975448608,
+  "final_val_acc": 0.9956555962562561,
+  "final_train_f1": 0.9999067187309265,
+  "final_val_f1": 0.8496993780136108,
+  "roc_auc": 0.984618865795518,
+  "num_train_samples": 161124,
+  "num_val_samples": 69054,
+  "balance_method": "oversampling"
+}
